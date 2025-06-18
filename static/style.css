@@ -1,0 +1,23 @@
+<style>
+        /*
+        * Se você não criar static/style.css, pode manter estes estilos aqui.
+        * Mas é melhor separá-los para melhor organização.
+        */
+        body {
+            background-color: #f8f9fa; /* Cor de fundo Bootstrap */
+            color: #212529; /* Cor de texto padrão Bootstrap */
+        }
+        .container {
+            margin-top: 20px;
+            margin-bottom: 20px;
+            padding: 20px;
+            border-radius: 0.5rem; /* Borda arredondada Bootstrap */
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075); /* Sombra Bootstrap */
+            background-color: #fff;
+        }
+        h1, h2 {
+            color: #0d6efd; /* Azul primário Bootstrap */
+            text-align: center;
+            margin-bottom: 1.5rem; /* Espaçamento padrão */
+        }
+</style>

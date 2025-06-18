@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block title %}Adicionar Transação - Gestor de Investimentos{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold text-gray-900 mb-6 text-center">Adicionar Nova Transação</h1>
+
+    <div class="max-w-md mx-auto bg-white rounded-lg shadow-lg p-6">
+        <form method="POST" action="{{ url_for('add_transaction') }}">
+            <div class="mb-4">
+                <label for="asset_name" class="block text-gray-700 text-sm font-bold mb-2">Nome do Ativo:</label>
+                <input type="text" id="asset_name" name="asset_name" required
+                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                       placeholder="Ex: Petrobras">
+            </div>
+            <div class="mb-4">
+                <label for="asset_symbol" class="block text-gray-700 text-sm font-bold mb-2">Símbolo do Ativo:</label>
+                <input type="text" id="asset_symbol" name="asset_symbol" required
+                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                       placeholder="Ex: PETR4.SA ou BTC-USD">
+            </div>
+            <div class="mb-4">
+                <label for="quantity" class="block text-gray-700 text-sm font-bold mb-2">Quantidade:</label>
+                <input type="number" id="quantity" name="quantity" step="0.01" required
+                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                       placeholder="Ex: 100.00">
+            </div>
+            <div class="mb-4">
+                <label for="purchase_price" class="block text-gray-700 text-sm font-bold mb-2">Preço Unitário (R$):</label>
+                <input type="number" id="purchase_price" name="purchase_price" step="0.01" required
+                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                       placeholder="Ex: 32.50">
+            </div>
+            <div class="mb-4">
+                <label for="transaction_type" class="block text-gray-700 text-sm font-bold mb-2">Tipo de Transação:</label>
+                <select id="transaction_type" name="transaction_type" required
+                        class="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    <option value="buy">Compra</option>
+                    <option value="sell">Venda</option>
+                </select>
+            </div>
+            <div class="mb-6">
+                <label for="transaction_date" class="block text-gray-700 text-sm font-bold mb-2">Data da Transação:</label>
+                <input type="date" id="transaction_date" name="transaction_date" required
+                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            </div>
+            
+            <div class="flex items-center justify-between">
+                <button type="submit"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-200">
+                    Adicionar Transação
+                </button>
+                <a href="{{ url_for('index') }}" class="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800">
+                    Cancelar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

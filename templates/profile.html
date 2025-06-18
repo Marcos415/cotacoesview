@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+
+{% block title %}Meu Perfil{% endblock %}
+
+{% block content %}
+    <div class="container mx-auto px-4 py-8 max-w-2xl flex-grow"> {# Adicionado flex-grow aqui para empurrar o rodapé para baixo #}
+        <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Meu Perfil</h2>
+        
+        {# As mensagens flash já são exibidas globalmente pelo base.html, não é necessário duplicar aqui #}
+
+        <div class="bg-white p-8 rounded-lg shadow-xl">
+            <form action="{{ url_for('profile') }}" method="POST" class="space-y-4">
+                <div class="flex flex-col md:flex-row md:space-x-4">
+                    <div class="flex-1">
+                        <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Nome de Utilizador</label>
+                        <input type="text" id="username" name="username" value="{{ user.username }}" readonly disabled
+                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed shadow-sm sm:text-sm">
+                        <p class="text-xs text-gray-500 mt-1">O nome de utilizador não pode ser alterado.</p>
+                    </div>
+                    <div class="flex-1 mt-4 md:mt-0">
+                        <label for="id" class="block text-sm font-medium text-gray-700 mb-1">ID do Utilizador</label>
+                        <input type="text" id="id" name="id" value="{{ user.id }}" readonly disabled
+                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed shadow-sm sm:text-sm">
+                    </div>
+                </div>
+
+                <div>
+                    <label for="full_name" class="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
+                    <input type="text" id="full_name" name="full_name" value="{{ user.full_name | default('') }}" required
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <div>
+                    <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" id="email" name="email" value="{{ user.email | default('') }}" required
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <div>
+                    <label for="contact_number" class="block text-sm font-medium text-gray-700 mb-1">Número de Contato</label>
+                    <input type="text" id="contact_number" name="contact_number" value="{{ user.contact_number | default('') }}"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Status de Administrador</label>
+                    <input type="text" value="{{ 'Sim' if user.is_admin else 'Não' }}" readonly disabled
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed shadow-sm sm:text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Data de Registo</label>
+                    <input type="text" value="{{ user.created_at | datetimeformat }}" readonly disabled
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed shadow-sm sm:text-sm">
+                </div>
+
+                <button type="submit"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-lg transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Guardar Alterações
+                </button>
+            </form>
+        </div>
+    </div>
+{% endblock %}

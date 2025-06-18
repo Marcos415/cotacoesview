@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block title %}Editar Cotação{% endblock %}
+
+{% block content %}
+    <h1 class="mb-4">Editar Cotação</h1>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form action="{{ url_for('editar_cotacao', id=cotacao.id) }}" method="POST" class="p-3 mb-4 bg-light rounded shadow-sm">
+        <div class="mb-3">
+            <label for="simbolo_ativo" class="form-label">Símbolo do Ativo:</label>
+            <input type="text" id="simbolo_ativo" name="simbolo_ativo" value="{{ cotacao.simbolo_ativo }}" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="data_cotacao" class="form-label">Data da Cotação:</label>
+            <input type="date" id="data_cotacao" name="data_cotacao" value="{{ cotacao.data_cotacao.strftime('%Y-%m-%d') }}" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="valor_cotacao" class="form-label">Valor da Cotação:</label>
+            <input type="number" id="valor_cotacao" name="valor_cotacao" step="0.01" value="{{ '%.2f'|format(cotacao.valor_cotacao) }}" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="quantidade" class="form-label">Quantidade:</label>
+            <input type="number" id="quantidade" name="quantidade" value="{{ cotacao.quantidade }}" min="0" class="form-control">
+        </div>
+        <div class="mb-3">
+            <label for="observacoes" class="form-label">Observações:</label>
+            <textarea id="observacoes" name="observacoes" rows="3" class="form-control">{{ cotacao.observacoes }}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary me-2">Salvar Alterações</button>
+        <button type="button" class="btn btn-secondary" onclick="window.location.href='{{ url_for('index') }}'">Cancelar</button>
+    </form>
+{% endblock %}
