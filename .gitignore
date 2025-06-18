@@ -1,0 +1,20 @@
+# Arquivos de ambiente
+.env
+.env.*
+
+# Pastas de cache e ambientes virtuais Python
+__pycache__/
+*.pyc
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Arquivos de log
+*.log
+
+# Arquivos específicos do sistema operacional
+.DS_Store # macOS
+Thumbs.db # Windows
+
+# Arquivos de IDE (ex: VS Code)
+.vscode/
