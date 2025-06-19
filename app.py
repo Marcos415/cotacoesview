@@ -4,11 +4,11 @@ import os
 import joblib
 import pandas as pd
 import yfinance as yf
-import mysql.connector
+# import mysql.connector # REMOVIDO: Será importado condicionalmente dentro do DBConnectionManager
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-from functools import wraps 
+from functools import wraps
 
 import requests
 from bs4 import BeautifulSoup
@@ -39,8 +39,7 @@ if not app.secret_key:
 CORS(app)
 
 # Passamos a função datetime.datetime.now (sem parênteses)
-app.jinja_env.globals['now'] = datetime.datetime.now 
-
+app.jinja_env.globals['now'] = datetime.datetime.now
 
 # --- CONFIGURAÇÃO DO CACHE ---
 # Caching Dictionaries (globais)
@@ -64,7 +63,6 @@ def is_cache_fresh(cache, key, ttl):
     return False
 
 # --- FIM DA CONFIGURAÇÃO DO CACHE ---
-
 
 # --- CONFIGURAÇÃO DA API DE NOTÍCIAS ---
 # IMPORTANTE: Sua chave de API real da NewsAPI.org
@@ -109,19 +107,108 @@ def floatformat(value, precision=2):
         return value # Retorna o valor original se não puder ser convertido para float
 
 # --- Configurações do Banco de Dados ---
-# Agora pega as credenciais do banco de dados das variáveis de ambiente
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'), # 'localhost' como fallback para desenvolvimento
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'database': os.getenv('DB_DATABASE'),
-    'port': int(os.getenv('DB_PORT', 3307)) # Converte para int, com 3307 como fallback
-}
+# Tenta obter a URL do banco de dados para PostgreSQL (Render)
+DATABASE_URL = os.getenv('DATABASE_URL')
 
-# Verifica se as variáveis de ambiente essenciais para o DB foram carregadas
-if not all([DB_CONFIG['user'], DB_CONFIG['password'], DB_CONFIG['database']]):
-    raise ValueError("Uma ou mais variáveis de ambiente do banco de dados (DB_USER, DB_PASSWORD, DB_DATABASE) não estão definidas. Por favor, defina-as no seu arquivo .env.")
+# Se DATABASE_URL não estiver definida, usa as configurações do MySQL para desenvolvimento local
+if DATABASE_URL:
+    DB_TYPE = 'postgresql'
+    print("DEBUG: Usando conexão PostgreSQL (DATABASE_URL detectada).")
+else:
+    DB_TYPE = 'mysql'
+    print("DEBUG: Usando conexão MySQL (DATABASE_URL não detectada).")
+    DB_CONFIG_MYSQL = {
+        'host': os.getenv('DB_HOST', 'localhost'), # 'localhost' como fallback para desenvolvimento
+        'user': os.getenv('DB_USER'),
+        'password': os.getenv('DB_PASSWORD'),
+        'database': os.getenv('DB_DATABASE'),
+        'port': int(os.getenv('DB_PORT', 3306)) # Porta padrão do MySQL é 3306
+    }
+    # Verifica se as variáveis de ambiente essenciais para o MySQL foram carregadas
+    if not all([DB_CONFIG_MYSQL['user'], DB_CONFIG_MYSQL['password'], DB_CONFIG_MYSQL['database']]):
+        raise ValueError("Uma ou mais variáveis de ambiente do banco de dados MySQL (DB_USER, DB_PASSWORD, DB_DATABASE) não estão definidas para uso local. Por favor, defina-as no seu arquivo .env.")
 
+# --- Context Manager para Conexões Unificado (MySQL ou PostgreSQL) ---
+class DBConnectionManager:
+    def __init__(self, dictionary=False, buffered=False):
+        self.conn = None
+        self.cursor = None
+        self.dictionary = dictionary
+        self.buffered = buffered
+        self.db_type = DB_TYPE # Armazena o tipo de DB selecionado
+
+    def __enter__(self):
+        print(f"DEBUG: DBConnectionManager - Entrando no contexto ({self.db_type}, buffered={self.buffered})...")
+        try:
+            if self.db_type == 'mysql':
+                import mysql.connector
+                self.conn = mysql.connector.connect(**DB_CONFIG_MYSQL)
+                self.cursor = self.conn.cursor(dictionary=self.dictionary, buffered=self.buffered)
+            elif self.db_type == 'postgresql':
+                import psycopg2
+                from urllib.parse import urlparse
+                # Analisa a DATABASE_URL para extrair credenciais para psycopg2
+                result = urlparse(DATABASE_URL)
+                username = result.username
+                password = result.password
+                database = result.path[1:]
+                hostname = result.hostname
+                port = result.port if result.port else 5432 # Default PostgreSQL port
+
+                self.conn = psycopg2.connect(
+                    database=database,
+                    user=username,
+                    password=password,
+                    host=hostname,
+                    port=port
+                )
+                # Para PostgreSQL, o cursor tipo 'dictionary' é mais complexo,
+                # normalmente psycopg2 retorna tuplas ou você usa dictcursor.
+                # psycopg2.extras.RealDictCursor é o equivalente a dictionary=True
+                if self.dictionary:
+                    import psycopg2.extras
+                    self.cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                else:
+                    self.cursor = self.conn.cursor()
+            print("DEBUG: DBConnectionManager - Conexão e cursor estabelecidos.")
+            return self.cursor
+        except Exception as err:
+            print(f"ERRO: DBConnectionManager - Erro ao conectar ao {self.db_type}: {err}")
+            if self.cursor:
+                try: self.cursor.close()
+                except Exception as close_err:
+                    print(f"ERRO: DBConnectionManager - Erro ao fechar cursor em __enter__ após falha: {close_err}")
+            if self.conn:
+                try: self.conn.close()
+                except Exception as close_err:
+                    print(f"ERRO: DBConnectionManager - Erro ao fechar conexão em __enter__ após falha: {close_err}")
+            raise
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        print(f"DEBUG: DBConnectionManager - Saindo do contexto (exc_type={exc_type})...")
+        if self.cursor:
+            try:
+                self.cursor.close()
+                print("DEBUG: DBConnectionManager - Cursor fechado.")
+            except Exception as err:
+                print(f"ERRO: DBConnectionManager - Erro ao fechar cursor no __exit__: {err}")
+        if self.conn:
+            try:
+                if exc_type is None:
+                    self.conn.commit()
+                    print("DEBUG: DBConnectionManager - Conexão commitada.")
+                else:
+                    print(f"DEBUG: DBConnectionManager - Transação será revertida devido a {exc_val}")
+                    self.conn.rollback()
+                    print("DEBUG: DBConnectionManager - Conexão revertida.")
+            except Exception as err:
+                print(f"ERRO: DBConnectionManager - Erro ao comitar/reverter no __exit__: {err}")
+            finally:
+                try:
+                    self.conn.close()
+                    print("DEBUG: DBConnectionManager - Conexão fechada.")
+                except Exception as err:
+                    print(f"ERRO: DBConnectionManager - Erro ao fechar conexão no __exit__: {err}")
 
 # --- Dicionário de Mapeamento de Símbolos ---
 SYMBOL_MAPPING = {
@@ -142,7 +229,7 @@ SYMBOL_MAPPING = {
     'OURO_FUTURO': 'GC=F',
     'NASDAQ_COMPOSITE': '^IXIC',
     'RUMO S.A.': 'RAIL3.SA',
-    'DOW_JONES': '^DJI' 
+    'DOW_JONES': '^DJI'
 }
 
 REVERSE_SYMBOL_MAPPING = {}
@@ -156,71 +243,6 @@ for name, ticker in SYMBOL_MAPPING.items():
         REVERSE_SYMBOL_MAPPING[ticker] = name
     else:
         REVERSE_SYMBOL_MAPPING[ticker] = name # Fallback, se não for nenhum dos anteriores
-
-# --- Context Manager para Conexões MySQL ---
-class MySQLConnectionManager:
-    def __init__(self, db_config, dictionary=False, buffered=False): 
-        self.db_config = db_config
-        self.conn = None
-        self.cursor = None
-        self.dictionary = dictionary
-        self.buffered = buffered 
-
-    def __enter__(self):
-        print(f"DEBUG: MySQLConnectionManager - Entrando no contexto (buffered={self.buffered})...")
-        try:
-            self.conn = mysql.connector.connect(**self.db_config)
-            self.cursor = self.conn.cursor(dictionary=self.dictionary, buffered=self.buffered) 
-            print("DEBUG: MySQLConnectionManager - Conexão e cursor estabelecidos.")
-            return self.cursor
-        except mysql.connector.Error as err:
-            print(f"ERRO: MySQLConnectionManager - Erro ao conectar: {err}")
-            if self.cursor:
-                try: self.cursor.close()
-                except mysql.connector.Error as close_err:
-                    print(f"ERRO: MySQLConnectionManager - Erro ao fechar cursor em __enter__ após falha de conexão: {close_err}")
-            if self.conn:
-                try: self.conn.close()
-                except mysql.connector.Error as close_err:
-                    print(f"ERRO: MySQLConnectionManager - Erro ao fechar conexão em __enter__ após falha de conexão: {close_err}")
-            raise 
-        except Exception as e:
-            print(f"ERRO: MySQLConnectionManager - Erro inesperado no __enter__: {e}")
-            if self.cursor:
-                try: self.cursor.close()
-                except mysql.connector.Error as close_err:
-                    print(f"ERRO: MySQLConnectionManager - Erro ao fechar cursor em __enter__ após erro inesperado: {close_err}")
-            if self.conn:
-                try: self.conn.close()
-                except mysql.connector.Error as close_err:
-                    print(f"ERRO: MySQLConnectionManager - Erro ao fechar conexão em __enter__ após erro inesperado: {close_err}")
-            raise
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        print(f"DEBUG: MySQLConnectionManager - Saindo do contexto (exc_type={exc_type})...")
-        if self.cursor:
-            try:
-                self.cursor.close()
-                print("DEBUG: MySQLConnectionManager - Cursor fechado.")
-            except mysql.connector.Error as err:
-                print(f"ERRO: MySQLConnectionManager - Erro ao fechar cursor no __exit__: {err}")
-        if self.conn:
-            try:
-                if exc_type is None: 
-                    self.conn.commit()
-                    print("DEBUG: MySQLConnectionManager - Conexão commitada.")
-                else: 
-                    print(f"DEBUG: MySQLConnectionManager - Transação será revertida devido a {exc_val}")
-                    self.conn.rollback()
-                    print("DEBUG: MySQLConnectionManager - Conexão revertida.")
-            except mysql.connector.Error as err:
-                print(f"ERRO: MySQLConnectionManager - Erro ao comitar/reverter no __exit__: {err}")
-            finally: 
-                try:
-                    self.conn.close()
-                    print("DEBUG: MySQLConnectionManager - Conexão fechada.")
-                except mysql.connector.Error as err:
-                    print(f"ERRO: MySQLConnectionManager - Erro ao fechar conexão no __exit__: {err}")
 
 # --- Decorators para Autenticação e Autorização ---
 def login_required(f):
@@ -254,38 +276,38 @@ def admin_required(f):
 def get_user_by_id(user_id):
     try:
         # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True, buffered=True) as cursor_db:
+        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db: # ALTERADO AQUI
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             cursor_db.execute("SELECT id, username, full_name, email, contact_number, is_admin, created_at FROM users WHERE id = %s", (user_id,))
             user_data = cursor_db.fetchone()
             print(f"DEBUG: get_user_by_id({user_id}) - Dados do utilizador: {user_data}")
             return user_data
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao buscar utilizador por ID: {err}")
+    except Exception as err: # Captura exceções mais gerais agora
+        print(f"Erro ao buscar utilizador por ID: {err}")
         return None
 
 def get_user_by_username(username):
     try:
         # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True, buffered=True) as cursor_db:
+        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db: # ALTERADO AQUI
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             cursor_db.execute("SELECT id, username, password_hash, full_name, email, contact_number, is_admin FROM users WHERE username = %s", (username,))
             user_data = cursor_db.fetchone()
             print(f"DEBUG: get_user_by_username({username}) - Dados do utilizador: {user_data}")
             return user_data
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao buscar utilizador por nome de utilizador: {err}")
+    except Exception as err: # Captura exceções mais gerais agora
+        print(f"Erro ao buscar utilizador por nome de utilizador: {err}")
         return None
 
 # Nova função para buscar utilizador por email
 def get_user_by_email(email):
     try:
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True, buffered=True) as cursor_db:
+        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db: # ALTERADO AQUI
             cursor_db.execute("SELECT id, username, full_name, email, contact_number, is_admin FROM users WHERE email = %s", (email,))
             user_data = cursor_db.fetchone()
             return user_data
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao buscar utilizador por email: {err}")
+    except Exception as err: # Captura exceções mais gerais agora
+        print(f"Erro ao buscar utilizador por email: {err}")
         return None
 
 
@@ -295,58 +317,53 @@ def get_all_users():
     current_user_id = session.get('user_id')
     print(f"DEBUG: get_all_users() - current_user_id na sessão: {current_user_id}")
 
-    if current_user_id is None: 
+    if current_user_id is None:
         print("DEBUG: get_all_users() - user_id não encontrado na sessão. Retornando lista vazia.")
-        return [] 
+        return []
 
     try:
         # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True, buffered=True) as cursor_db:
+        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db: # ALTERADO AQUI
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             sql_query = "SELECT id, username, full_name, email, contact_number, is_admin, created_at FROM users"
             cursor_db.execute(sql_query)
             all_users_from_db = cursor_db.fetchall()
-            
+
             print(f"DEBUG: get_all_users() - Todos os utilizadores do DB: {all_users_from_db}")
 
             users = [u for u in all_users_from_db if u['id'] != current_user_id]
-            
+
             print(f"DEBUG: get_all_users() - Utilizadores após filtrar o admin logado: {users}")
 
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao buscar todos os utilizadores: {err}")
-    except Exception as e:
-        print(f"Erro inesperado em get_all_users: {e}")
+    except Exception as err: # Captura exceções mais gerais agora
+        print(f"Erro ao buscar todos os utilizadores: {err}")
     return users
 
 def get_admin_count():
     """Retorna o número total de utilizadores com is_admin = TRUE."""
     try:
         # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True, buffered=True) as cursor_db:
+        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db: # ALTERADO AQUI
             cursor_db.execute("SELECT COUNT(*) as admin_count FROM users WHERE is_admin = TRUE")
             result = cursor_db.fetchone()
             count = result['admin_count'] if result else 0
             print(f"DEBUG: get_admin_count() - Total de administradores: {count}")
             return count
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao contar administradores: {err}")
-        return 0
-    except Exception as e:
-        print(f"Erro inesperado em get_admin_count: {e}")
+    except Exception as e: # Captura exceções mais gerais agora
+        print(f"Erro ao contar administradores: {e}")
         return 0
 
 def delete_user_from_db(user_id):
     """Exclui um utilizador do banco de dados e todas as suas transações/alertas."""
     print(f"DEBUG: Tentando excluir utilizador com ID: {user_id}")
     try:
-        with MySQLConnectionManager(DB_CONFIG) as cursor_db:
+        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
             cursor_db.execute("DELETE FROM users WHERE id = %s", (user_id,))
             rows_affected = cursor_db.rowcount
             print(f"DEBUG: delete_user_from_db - Linhas afetadas na tabela users: {rows_affected}")
             return rows_affected > 0
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao excluir utilizador: {err}")
+    except Exception as err: # Captura exceções mais gerais agora
+        print(f"Erro ao excluir utilizador: {err}")
         return False
 
 def update_user_password(user_id, new_password):
@@ -354,13 +371,13 @@ def update_user_password(user_id, new_password):
     print(f"DEBUG: Tentando redefinir senha para utilizador com ID: {user_id}")
     try:
         hashed_password = generate_password_hash(new_password)
-        with MySQLConnectionManager(DB_CONFIG) as cursor_db:
+        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
             cursor_db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hashed_password, user_id))
             rows_affected = cursor_db.rowcount
             print(f"DEBUG: update_user_password - Linhas afetadas: {rows_affected}")
             return rows_affected > 0
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao atualizar palavra-passe: {err}")
+    except Exception as err: # Captura exceções mais gerais agora
+        print(f"Erro ao atualizar palavra-passe: {err}")
         return False
 
 def toggle_user_admin_status(user_id, new_status):
@@ -370,34 +387,31 @@ def toggle_user_admin_status(user_id, new_status):
     """
     print(f"DEBUG: Tentando definir is_admin para utilizador {user_id} como {new_status}")
     try:
-        with MySQLConnectionManager(DB_CONFIG) as cursor_db:
+        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
             sql = "UPDATE users SET is_admin = %s WHERE id = %s"
             cursor_db.execute(sql, (new_status, user_id))
             rows_affected = cursor_db.rowcount
             print(f"DEBUG: toggle_user_admin_status - Linhas afetadas: {rows_affected}")
             return rows_affected > 0
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao alternar status de admin: {err}")
+    except Exception as err: # Captura exceções mais gerais agora
+        print(f"Erro ao alternar status de admin: {err}")
         return False
 
 # Nova função para atualizar dados do perfil do utilizador
 def update_user_profile_data(user_id, full_name, email, contact_number):
     """Atualiza o nome completo, email e número de contacto de um utilizador."""
     try:
-        with MySQLConnectionManager(DB_CONFIG) as cursor_db:
+        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
             sql = """
-            UPDATE users 
-            SET full_name = %s, email = %s, contact_number = %s 
+            UPDATE users
+            SET full_name = %s, email = %s, contact_number = %s
             WHERE id = %s
             """
             cursor_db.execute(sql, (full_name, email, contact_number, user_id))
             rows_affected = cursor_db.rowcount
             print(f"DEBUG: update_user_profile_data - Linhas afetadas: {rows_affected}")
             return rows_affected > 0
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao atualizar dados do perfil: {err}")
-        return False
-    except Exception as e:
+    except Exception as e: # Captura exceções mais gerais agora
         print(f"Erro inesperado ao atualizar dados do perfil: {e}")
         return False
 
@@ -419,19 +433,17 @@ def log_admin_action(admin_user_id, action_type, target_user_id=None, details=No
         if target_user_id:
             target_user_data = get_user_by_id(target_user_id)
             target_username = target_user_data['username'] if target_user_data else f"ID_Deletado_{target_user_id}"
-            
-        with MySQLConnectionManager(DB_CONFIG) as cursor_db:
+
+        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
             sql = """
             INSERT INTO admin_audit_logs (admin_user_id, admin_username_at_action, action_type, target_user_id, target_username_at_action, details, timestamp)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
             details_json = json.dumps(details) if details is not None else None
-            
+
             cursor_db.execute(sql, (admin_user_id, admin_username, action_type, target_user_id, target_username, details_json, datetime.datetime.now()))
-    except mysql.connector.Error as err:
+    except Exception as err: # Captura exceções mais gerais agora
         print(f"ERRO ao registar ação de admin no log: {err}")
-    except Exception as e:
-        print(f"ERRO inesperado ao registar ação de admin: {e}")
 
 
 # --- Função Auxiliar para Buscar Transações (agora por utilizador) ---
@@ -441,9 +453,9 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
     try:
         print(f"DEBUG FILTERS: user_id={user_id}, data_inicio={data_inicio}, data_fim={data_fim}, ordenar_por={ordenar_por}, ordem={ordem}, simbolo_filtro='{simbolo_filtro}' (raw)")
 
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True) as cursor_db:
+        with DBConnectionManager(dictionary=True) as cursor_db: # ALTERADO AQUI
             final_simbolo_to_fetch_for_filter = None
-            
+
             # CORREÇÃO AQUI: Verifica se o simbolo_filtro não é vazio E não é a string "None" (ignorando maiúsculas/minúsculas)
             if simbolo_filtro and simbolo_filtro.lower() != 'none':
                 # Tenta mapear ou ajustar o símbolo de filtro
@@ -454,7 +466,7 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
                    not any(simbolo_filtro.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
                     if 4 <= len(simbolo_filtro) <= 6 and simbolo_filtro.isalnum():
                         final_simbolo_to_fetch_for_filter = f"{simbolo_filtro.upper()}.SA"
-            
+
             print(f"DEBUG FILTERS: Simbolo filtro final para busca: '{final_simbolo_to_fetch_for_filter}'")
 
             params = [user_id]
@@ -467,7 +479,7 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
             if data_fim:
                 where_clauses.append("data_transacao <= %s")
                 params.append(data_fim)
-            
+
             if final_simbolo_to_fetch_for_filter: # Só adiciona esta cláusula se houver um símbolo válido
                 where_clauses.append("simbolo_ativo = %s")
                 params.append(final_simbolo_to_fetch_for_filter)
@@ -492,7 +504,7 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
                 ordem = 'DESC'
 
             query += f" ORDER BY {ordenar_por} {ordem}"
-            
+
             offset = (page - 1) * per_page
             query += f" LIMIT {per_page} OFFSET {offset}"
 
@@ -510,11 +522,8 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
                 elif transacao.get('hora_transacao') is None:
                     transacao['hora_transacao'] = None
 
-    except mysql.connector.Error as err:
-        print(f"ERRO MySQL ao buscar transações: {err}")
-        raise
-    except Exception as e:
-        print(f"ERRO inesperado em buscar_transacoes_filtradas: {e}")
+    except Exception as err: # Captura exceções mais gerais agora
+        print(f"ERRO ao buscar transações: {err}")
         raise
     return transacoes, total_transacoes
 
@@ -526,7 +535,7 @@ def get_historical_prices_yfinance_cached(simbolo, period, interval):
        not any(simbolo.upper().endswith(suf)for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
         if 4 <= len(simbolo) <= 6 and simbolo.isalnum():
             final_simbolo_to_fetch = f"{simbolo.upper()}.SA"
-        
+
     cache_key = (final_simbolo_to_fetch, period, interval)
 
     if is_cache_fresh(market_data_cache, cache_key, MARKET_DATA_CACHE_TTL):
@@ -552,8 +561,8 @@ def _get_current_price_yfinance(simbolo):
        not any(simbolo.upper().endswith(suf)for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
         if 4 <= len(simbolo) <= 6 and simbolo.isalnum():
             final_simbolo_to_fetch = f"{simbolo.upper()}.SA"
-            
-    cache_key = (final_simbolo_to_fetch, "1d", "1m") 
+
+    cache_key = (final_simbolo_to_fetch, "1d", "1m")
 
     if is_cache_fresh(market_data_cache, cache_key, MARKET_DATA_CACHE_TTL):
         return market_data_cache[cache_key]['data']
@@ -574,11 +583,11 @@ def _get_current_price_yfinance(simbolo):
             else:
                 print(f"DEBUG: Nenhuma coluna 'Adj Close' ou 'Close' encontrada para {final_simbolo_to_fetch} no DataFrame histórico. Colunas presentes: {hist.columns.tolist()}")
                 return None
-            
+
             if pd.isna(latest_price):
                 print(f"DEBUG: Preço encontrado para {final_simbolo_to_fetch} é NaN. Retornando None.")
                 return None
-            
+
             market_data_cache[cache_key] = {'data': float(latest_price), 'timestamp': datetime.datetime.now()}
             return float(latest_price)
         else:
@@ -598,8 +607,8 @@ def get_predicted_price_for_display(simbolo):
        not any(simbolo.upper().endswith(suf)for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
         if 4 <= len(simbolo) <= 6 and simbolo.isalnum():
             simbolo_yf_for_prediction = f"{simbolo.upper()}.SA"
-            
-    cache_key = simbolo_yf_for_prediction 
+
+    cache_key = simbolo_yf_for_prediction
 
     if is_cache_fresh(prediction_cache, cache_key, PREDICTION_CACHE_TTL):
         return prediction_cache[cache_key]['data']
@@ -607,7 +616,7 @@ def get_predicted_price_for_display(simbolo):
     predicted_price = None
 
     predicted_price = train_and_predict_price(simbolo_yf_for_prediction, get_historical_prices_yfinance_cached)
-    
+
     if predicted_price is not None:
         prediction_cache[cache_key] = {'data': float(predicted_price), 'timestamp': datetime.datetime.now()}
         return float(predicted_price)
@@ -626,7 +635,7 @@ def calcular_posicoes_carteira(user_id):
     total_prejuizo_nao_realizado = 0.0
 
     try:
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True) as cursor_db:
+        with DBConnectionManager(dictionary=True) as cursor_db: # ALTERADO AQUI
             sql_transacoes = """
             SELECT
                 simbolo_ativo,
@@ -649,7 +658,7 @@ def calcular_posicoes_carteira(user_id):
             for transacao in todas_transacoes:
                 simbolo = transacao['simbolo_ativo']
                 tipo = transacao['tipo_operacao']
-                
+
                 quantidade = float(transacao['quantidade'])
                 preco_unitario = float(transacao['preco_unitario'])
                 custos_taxas = float(transacao['custos_taxas'])
@@ -666,17 +675,17 @@ def calcular_posicoes_carteira(user_id):
                             custo_medio_atual = estado_ativo[simbolo]['custo_acumulado'] / estado_ativo[simbolo]['quantidade']
                             custo_das_vendidas = quantidade * custo_medio_atual
 
-                            estado_ativo[simbolo]['quantidade'] -= quantidade 
+                            estado_ativo[simbolo]['quantidade'] -= quantidade
                             estado_ativo[simbolo]['custo_acumulado'] -= (custo_das_vendidas + custos_taxas)
 
-                            if estado_ativo[simbolo]['quantidade'] <= 0.00001: 
+                            if estado_ativo[simbolo]['quantidade'] <= 0.00001:
                                 estado_ativo[simbolo]['quantidade'] = 0.0
                                 estado_ativo[simbolo]['custo_acumulado'] = 0.0
                         else:
                             estado_ativo[simbolo]['quantidade'] = 0.0
                             estado_ativo[simbolo]['custo_acumulado'] = 0.0
                     else:
-                        pass 
+                        pass
 
             for simbolo, dados_posicao in estado_ativo.items():
                 if dados_posicao['quantidade'] > 0:
@@ -688,1042 +697,639 @@ def calcular_posicoes_carteira(user_id):
                     lucro_prejuizo_nao_realizado_individual = None
                     if preco_atual is not None:
                         lucro_prejuizo_nao_realizado_individual = (preco_atual - preco_medio) * float(dados_posicao['quantidade'])
-                        
-                        total_valor_carteira += (preco_atual * float(dados_posicao['quantidade']))
-                        
-                        if lucro_prejuizo_nao_realizado_individual is not None:
-                            if lucro_prejuizo_nao_realizado_individual >= 0:
-                                total_lucro_nao_realizado += lucro_prejuizo_nao_realizado_individual
-                            else:
-                                total_prejuizo_nao_realizado += lucro_prejuizo_nao_realizado_individual
+                    else:
+                        # Se não há preço atual, ainda assim podemos calcular o valor atual com o preço médio
+                        lucro_prejuizo_nao_realizado_individual = 0.0
 
                     posicoes[simbolo] = {
-                        'nome_popular': REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo),
-                        'quantidade_total': float(dados_posicao['quantidade']),
-                        'preco_medio': float(preco_medio),
-                        'preco_atual': float(preco_atual) if preco_atual is not None else None,
-                        'lucro_prejuizo_nao_realizado': float(lucro_prejuizo_nao_realizado_individual) if lucro_prejuizo_nao_realizado_individual is not None else None,
-                        'preco_previsto': float(preco_previsto) if preco_previsto is not None else None,
-                        'valor_total_ativo': (float(preco_atual) * float(dados_posicao['quantidade'])) if preco_atual is not None else 0.0
+                        'quantidade': dados_posicao['quantidade'],
+                        'preco_medio': preco_medio,
+                        'preco_atual': preco_atual,
+                        'preco_previsto': preco_previsto,
+                        'valor_atual': (preco_atual * dados_posicao['quantidade']) if preco_atual is not None else 0.0,
+                        'lucro_prejuizo_nao_realizado': lucro_prejuizo_nao_realizado_individual
                     }
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL em calcular_posicoes_carteira: {err}")
-        flash(f"Erro ao calcular posições da carteira: {err}", "danger")
+                    total_valor_carteira += posicoes[simbolo]['valor_atual']
+
+                    if lucro_prejuizo_nao_realizado_individual is not None:
+                        if lucro_prejuizo_nao_realizado_individual > 0:
+                            total_lucro_nao_realizado += lucro_prejuizo_nao_realizado_individual
+                        else:
+                            total_prejuizo_nao_realizado += lucro_prejuizo_nao_realizado_individual
+
     except Exception as e:
-        print(f"Erro inesperado em calcular_posicoes_carteira: {e}")
-        flash(f"Erro inesperado ao calcular posições da carteira: {e}", "danger")
-    
+        print(f"ERRO inesperado ao calcular posições da carteira: {e}")
+        # Retorna valores padrão em caso de erro para evitar que a página quebre
+        return {}, 0.0, 0.0, 0.0
+
     portfolio_cache[cache_key] = {
         'data': (posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado),
         'timestamp': datetime.datetime.now()
     }
     return posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado
 
-# --- Funções para Alertas de Preço (agora por utilizador) ---
-def checar_alertas_disparados(user_id):
-    try:
-        alertas_disparados_para_notificar = []
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True) as cursor_db:
-            cursor_db.execute("SELECT * FROM alertas_preco WHERE user_id = %s AND status = 'ATIVO'", (user_id,))
-            alertas_ativos = cursor_db.fetchall()
-
-            for alerta in alertas_ativos:
-                simbolo_alerta = alerta['simbolo_ativo']
-                preco_alvo = float(alerta['preco_alvo'])
-                tipo_alerta = alerta['tipo_alerta']
-                
-                # Usa a função de cotação com cache
-                current_price = _get_current_price_yfinance(simbolo_alerta)
-
-                if current_price is None:
-                    continue
-
-                alert_triggered = False
-                if tipo_alerta == 'ACIMA' and current_price >= preco_alvo:
-                    alert_triggered = True
-                elif tipo_alerta == 'ABAIXO' and current_price <= preco_alvo:
-                    alert_triggered = True
-
-                if alert_triggered:
-                    update_sql = "UPDATE alertas_preco SET status = 'DISPARADO', data_disparo = %s WHERE id = %s AND user_id = %s"
-                    cursor_db.execute(update_sql, (datetime.datetime.now(), alerta['id'], user_id))
-                    
-                    alertas_disparados_para_notificar.append({
-                        'simbolo': REVERSE_SYMBOL_MAPPING.get(simbolo_alerta, simbolo_alerta),
-                        'preco_alvo': preco_alvo,
-                        'tipo_alerta': tipo_alerta,
-                        'preco_atual': current_price
-                    })
-        
-        for alerta in alertas_disparados_para_notificar:
-            flash(f"ALERTA: {alerta['simbolo']} atingiu {alerta['tipo_alerta']} R$ {alerta['preco_alvo']:.2f}! Preço atual: R$ {alerta['preco_atual']:.2f}", "warning")
-
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao checar alertas: {err}")
-        flash(f"Erro ao checar alertas: {err}", "danger")
-    except Exception as e:
-        print(f"Erro inesperado ao checar alertas: {e}")
-        flash(f"Erro inesperado ao checar alertas: {e}", "danger")
-
-def buscar_alertas(user_id):
-    alertas = []
-    try:
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True) as cursor_db:
-            cursor_db.execute("SELECT * FROM alertas_preco WHERE user_id = %s ORDER BY data_criacao DESC", (user_id,))
-            alertas = cursor_db.fetchall()
-    except mysql.connector.Error as err:
-        print(f"Erro MySQL ao buscar alertas: {err}")
-        flash(f"Erro ao buscar alertas: {err}", "danger")
-    except Exception as e:
-        print(f"Erro inesperado ao buscar alertas: {e}")
-        flash(f"Erro inesperado ao buscar alertas: {e}", "danger")
-    return alertas
-
-# --- Função para buscar notícias financeiras de uma API real (NewsAPI.org exemplo) com Cache ---
-def _get_financial_news_from_api(query_term):
-    cache_key = query_term
-
+# --- Funções para Notícias (mantidas como estavam) ---
+def fetch_news(query):
+    cache_key = query
     if is_cache_fresh(news_cache, cache_key, NEWS_CACHE_TTL):
         return news_cache[cache_key]['data']
 
-    news_list = []
-    
-    # Adicionando uma verificação mais robusta para a chave da API
-    if not NEWS_API_KEY or NEWS_API_KEY == "YOUR_NEWSAPI_ORG_KEY_HERE": # Ajustado para a nova instrução
-        print("AVISO: NEWS_API_KEY não configurada ou inválida. Por favor, obtenha uma em https://newsapi.org/ e atualize o app.py.")
-        news_list.append({
-            'title': f"Notícias para {REVERSE_SYMBOL_MAPPING.get(query_term, query_term)}: Chave NewsAPI.org não configurada!",
-            'link': "https://newsapi.org/register",
-            'source': "Erro de Configuração (NewsAPI)",
-            'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-        })
-        news_cache[cache_key] = {'data': news_list, 'timestamp': datetime.datetime.now()}
-        return news_list
+    if not NEWS_API_KEY:
+        print("NEWS_API_KEY não está configurada. Não será possível buscar notícias.")
+        return []
 
-    search_query_name = REVERSE_SYMBOL_MAPPING.get(query_term, query_term).replace('.SA', '')
-    if search_query_name == query_term: 
-        search_query_name = query_term.replace('.SA', '')
-    
-    search_query = f"{search_query_name} OR {query_term}"
-    
     params = {
-        'q': search_query,
+        'q': query,
         'language': 'pt',
-        'sortBy': 'publishedAt',
-        'apiKey': NEWS_API_KEY,
-        'pageSize': 5
+        'sortBy': 'relevancy',
+        'apiKey': NEWS_API_KEY
     }
-
     try:
-        response = requests.get(NEWS_API_BASE_URL, params=params, timeout=10)
-        response.raise_for_status() # Lança HTTPError para respostas de erro (4xx ou 5xx)
-        data = response.json()
-
-        if data['status'] == 'ok' and data['articles']:
-            for article in data['articles']:
-                source_name = article['source']['name'] if article['source'] and 'name' in article['source'] else "Desconhecida"
-                
-                published_at_str = article['publishedAt']
-                try:
-                    published_dt = datetime.datetime.fromisoformat(published_at_str.replace('Z', '+00:00'))
-                    formatted_date = published_dt.strftime('%Y-%m-%d %H:%M')
-                except ValueError:
-                    formatted_date = published_at_str
-
-                news_list.append({
-                    'title': article['title'],
-                    'link': article['url'],
-                    'source': source_name,
-                    'date': formatted_date
-                })
-        else:
-            news_list.append({
-                'title': f"Nenhuma notícia encontrada para {REVERSE_SYMBOL_MAPPING.get(query_term, query_term)} via API.",
-                'link': "#",
-                'source': "NewsAPI.org",
-                'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-            })
-
-    except requests.exceptions.HTTPError as http_err:
-        print(f"ERRO HTTP ao buscar notícias para {query_term}: {http_err}. Resposta: {response.text}")
-        news_list.append({
-            'title': f"Erro HTTP ao buscar notícias para {REVERSE_SYMBOL_MAPPING.get(query_term, query_term)}: {http_err}",
-            'link': "#",
-            'source': "Erro HTTP (NewsAPI)",
-            'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-        })
-    except requests.exceptions.ConnectionError as conn_err:
-        print(f"ERRO de Conexão ao buscar notícias para {query_term}: {conn_err}")
-        news_list.append({
-            'title': f"Erro de conexão ao NewsAPI para {REVERSE_SYMBOL_MAPPING.get(query_term, query_term)}.",
-            'link': "#",
-            'source': "Erro de Rede",
-            'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-        })
-    except requests.exceptions.Timeout as timeout_err:
-        print(f"ERRO de Timeout ao buscar notícias para {query_term}: {timeout_err}")
-        news_list.append({
-            'title': f"Tempo esgotado ao buscar notícias para {REVERSE_SYMBOL_MAPPING.get(query_term, query_term)}.",
-            'link': "#",
-            'source': "Timeout de Rede",
-            'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-        })
+        response = requests.get(NEWS_API_BASE_URL, params=params)
+        response.raise_for_status() # Lança um erro para status de resposta HTTP ruins (4xx ou 5xx)
+        news_data = response.json()
+        articles = news_data.get('articles', [])
+        # Filtra artigos para ter URL, title e description
+        filtered_articles = [
+            {
+                'title': art.get('title'),
+                'description': art.get('description'),
+                'url': art.get('url'),
+                'source': art.get('source', {}).get('name'),
+                'publishedAt': datetime.datetime.fromisoformat(art['publishedAt'].replace('Z', '+00:00')) if 'publishedAt' in art else None
+            }
+            for art in articles if art.get('title') and art.get('description') and art.get('url')
+        ]
+        news_cache[cache_key] = {'data': filtered_articles, 'timestamp': datetime.datetime.now()}
+        return filtered_articles
     except requests.exceptions.RequestException as e:
-        print(f"ERRO geral RequestException ao buscar notícias para {query_term}: {e}")
-        news_list.append({
-            'title': f"Erro inesperado de requisição à NewsAPI para {REVERSE_SYMBOL_MAPPING.get(query_term, query_term)}.",
-            'link': "#",
-            'source': "Erro de Requisição",
-            'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-        })
+        print(f"Erro ao buscar notícias: {e}")
+        return []
     except json.JSONDecodeError as e:
-        print(f"ERRO ao decodificar JSON da NewsAPI para {query_term}: {e}. Resposta: {response.text}")
-        news_list.append({
-            'title': f"Erro ao decodificar JSON da NewsAPI para {REVERSE_SYMBOL_MAPPING.get(query_term, query_term)}.",
-            'link': "#",
-            'source': "Erro de Processamento",
-            'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-        })
-    except Exception as e:
-        print(f"ERRO inesperado ao buscar notícias para {query_term}: {e}")
-        news_list.append({
-            'title': f"Erro inesperado ao buscar notícias para {REVERSE_SYMBOL_MAPPING.get(query_term, query_term)}.",
-            'link': "#",
-            'source': "Erro Geral",
-            'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-        })
-    
-    for news_item in news_list:
-        news_item['simbolo_display'] = REVERSE_SYMBOL_MAPPING.get(query_term, query_term)
-    
-    news_cache[cache_key] = {'data': news_list, 'timestamp': datetime.datetime.now()}
-    return news_list
+        print(f"Erro ao decodificar JSON da API de notícias: {e}. Resposta: {response.text}")
+        return []
 
-# --- Rotas de Autenticação ---
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if 'user_id' in session: 
-        return redirect(url_for('index'))
 
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        
-        user = get_user_by_username(username)
-        
-        if user and check_password_hash(user['password_hash'], password):
-            session['user_id'] = user['id']
-            session['username'] = user['username']
-            session['is_admin'] = bool(user['is_admin']) 
-            print(f"DEBUG: Login bem-sucedido para {user['username']}. is_admin: {session['is_admin']}")
-            flash('Login bem-sucedido!', 'success')
-            next_url = request.args.get('next') or url_for('index')
-            return redirect(next_url)
-        else:
-            print(f"DEBUG: Tentativa de login falhou para {username}.")
-            flash('Nome de utilizador ou palavra-passe inválidos.', 'danger')
-    
-    return render_template('login.html')
+# --- ROTAS DA APLICAÇÃO ---
+
+@app.route('/')
+@login_required
+def index():
+    user_id = session.get('user_id')
+    user_data = get_user_by_id(user_id)
+    if not user_data:
+        flash('Sua sessão expirou ou o usuário não foi encontrado.', 'danger')
+        return redirect(url_for('logout'))
+
+    user_name = user_data['username'] # Pega o nome de usuário para exibir
+
+    posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado = calcular_posicoes_carteira(user_id)
+
+    # Buscar notícias sobre o mercado financeiro ou as principais ações na carteira
+    news_query = "Mercado Financeiro Brasil"
+    if posicoes:
+        top_symbols = list(posicoes.keys())[:3] # Pega até 3 símbolos das posições
+        news_query = ", ".join([REVERSE_SYMBOL_MAPPING.get(s, s) for s in top_symbols]) + ", Mercado Financeiro Brasil"
+
+    news_articles = fetch_news(news_query)
+
+
+    # Preparar dados para o gráfico de pizza de alocação da carteira
+    chart_labels = []
+    chart_values = []
+    for simbolo, dados in posicoes.items():
+        if dados['valor_atual'] > 0:
+            chart_labels.append(simbolo)
+            chart_values.append(dados['valor_atual'])
+
+    # Criar o gráfico de pizza
+    if chart_labels:
+        fig = go.Figure(data=[go.Pie(labels=chart_labels, values=chart_values, hole=.3)])
+        fig.update_layout(
+            title_text='Alocação da Carteira por Ativo',
+            title_font_size=20,
+            showlegend=True,
+            margin=dict(l=20, r=20, t=50, b=20),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color="#333"),
+            height=350
+        )
+        # Convertendo para JSON para passar ao template
+        pie_chart_json = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+    else:
+        pie_chart_json = None
+
+
+    # Preparar dados para o gráfico de barras Lucro/Prejuízo Não Realizado
+    profit_loss_labels = []
+    profit_loss_values = []
+    profit_loss_colors = []
+
+    for simbolo, dados in posicoes.items():
+        if dados['lucro_prejuizo_nao_realizado'] is not None:
+            profit_loss_labels.append(simbolo)
+            profit_loss_values.append(dados['lucro_prejuizo_nao_realizado'])
+            profit_loss_colors.append('green' if dados['lucro_prejuizo_nao_realizado'] >= 0 else 'red')
+
+    bar_chart_json = None
+    if profit_loss_labels:
+        bar_fig = go.Figure(data=[
+            go.Bar(
+                x=profit_loss_labels,
+                y=profit_loss_values,
+                marker_color=profit_loss_colors
+            )
+        ])
+        bar_fig.update_layout(
+            title_text='Lucro/Prejuízo Não Realizado por Ativo',
+            title_font_size=20,
+            xaxis_title='Ativo',
+            yaxis_title='Lucro/Prejuízo',
+            margin=dict(l=20, r=20, t=50, b=20),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color="#333"),
+            height=350
+        )
+        bar_chart_json = json.dumps(bar_fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+
+    return render_template('index.html',
+                           user_name=user_name,
+                           posicoes=posicoes,
+                           total_valor_carteira=total_valor_carteira,
+                           total_lucro_nao_realizado=total_lucro_nao_realizado,
+                           total_prejuizo_nao_realizado=total_prejuizo_nao_realizado,
+                           news_articles=news_articles,
+                           pie_chart_json=pie_chart_json,
+                           bar_chart_json=bar_chart_json)
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    if 'user_id' in session: 
-        return redirect(url_for('index'))
-
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        full_name = request.form['full_name'] 
-        email = request.form['email']         
-        contact_number = request.form.get('contact_number') 
-        
-        if not username or not password or not full_name or not email:
-            flash('Nome de utilizador, nome completo, email e palavra-passe são obrigatórios.', 'danger')
-            return redirect(url_for('register'))
+        confirm_password = request.form['confirm_password']
+        full_name = request.form['full_name']
+        email = request.form['email']
+        contact_number = request.form.get('contact_number') # Opcional
 
-        existing_user = get_user_by_username(username)
-        if existing_user:
-            flash('Nome de utilizador já existe. Por favor, escolha outro.', 'danger')
-            return redirect(url_for('register'))
-            
-        if email: 
-            existing_email_user = get_user_by_email(email)
-            if existing_email_user:
-                flash('Este email já está registado. Por favor, use outro.', "danger")
-                return redirect(url_for('register'))
+        if not username or not password or not confirm_password or not full_name or not email:
+            flash('Por favor, preencha todos os campos obrigatórios.', 'danger')
+            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
 
+        if password != confirm_password:
+            flash('As palavras-passe não coincidem.', 'danger')
+            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+
+        if len(password) < 6:
+            flash('A palavra-passe deve ter pelo menos 6 caracteres.', 'danger')
+            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+
+        # Verificar se o username já existe
+        if get_user_by_username(username):
+            flash('Nome de utilizador já registado. Por favor, escolha outro.', 'danger')
+            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+
+        # Verificar se o email já existe
+        if get_user_by_email(email):
+            flash('Endereço de email já registado. Por favor, use outro ou faça login.', 'danger')
+            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+
+        # Hash da senha
         hashed_password = generate_password_hash(password)
-        
+
         try:
-            with MySQLConnectionManager(DB_CONFIG) as cursor_db:
+            with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+                # Definir o primeiro utilizador como admin
+                is_admin = False
+                if get_admin_count() == 0:
+                    is_admin = True
+
                 sql = """
-                INSERT INTO users (username, password_hash, full_name, email, contact_number, is_admin) 
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO users (username, password_hash, full_name, email, contact_number, is_admin, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """
-                cursor_db.execute(sql, (username, hashed_password, full_name, email, contact_number, False)) 
-            print(f"DEBUG: Novo utilizador '{username}' registado como não-admin.")
-            flash('Registo bem-sucedido! Por favor, faça login.', 'success')
-            return redirect(url_for('login'))
-        except mysql.connector.Error as err:
-            print(f"Erro MySQL ao registar utilizador: {err}")
-            flash(f"Erro ao registar utilizador: {err}", "danger")
-        except Exception as e:
-            print(f"Erro inesperado no registo: {e}")
-            flash(f"Erro inesperado no registo: {e}", "danger")
-    
+                cursor_db.execute(sql, (username, hashed_password, full_name, email, contact_number, is_admin, datetime.datetime.now()))
+                flash('Registo bem-sucedido! Pode agora fazer login.', 'success')
+                # Logar a criação do primeiro admin, se for o caso
+                if is_admin:
+                    # Para o primeiro admin, o admin_user_id ainda não existe na sessão, usamos 0 ou None para indicar sistema/primeiro user
+                    log_admin_action(admin_user_id=None, # Pode ser 0 ou None para o primeiro registo
+                                     action_type='PRIMEIRO_ADMIN_REGISTADO',
+                                     target_user_id=cursor_db.lastrowid, # Pega o ID do user recém-criado
+                                     details={'username': username, 'email': email})
+
+                return redirect(url_for('login'))
+        except Exception as e: # Captura exceções mais gerais agora
+            flash(f'Ocorreu um erro ao registar. Tente novamente mais tarde. Erro: {e}', 'danger')
+            print(f"Erro ao registar utilizador: {e}")
+            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+
     return render_template('register.html')
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        user = get_user_by_username(username)
+        if user and check_password_hash(user['password_hash'], password):
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['is_admin'] = bool(user['is_admin']) # Converte para booleano
+
+            flash('Login bem-sucedido!', 'success')
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
+        else:
+            flash('Nome de utilizador ou palavra-passe inválidos.', 'danger')
+    return render_template('login.html')
+
 @app.route('/logout')
+@login_required
 def logout():
-    print(f"DEBUG: A terminar sessão para user_id: {session.get('user_id')}")
     session.pop('user_id', None)
     session.pop('username', None)
-    session.pop('is_admin', None) 
+    session.pop('is_admin', None)
     flash('Sessão encerrada com sucesso.', 'info')
     return redirect(url_for('login'))
 
-# --- Rotas do Aplicativo (Protegidas) ---
-@app.route('/')
-@login_required 
-def index():
+@app.route('/transactions', methods=['GET', 'POST'])
+@login_required
+def transactions_list():
     user_id = session.get('user_id')
-        
-    checar_alertas_disparados(user_id) 
+    user_name = session.get('username')
 
     data_inicio = request.args.get('data_inicio')
     data_fim = request.args.get('data_fim')
     ordenar_por = request.args.get('ordenar_por', 'data_transacao')
     ordem = request.args.get('ordem', 'DESC')
-    simbolo_filtro = request.args.get('simbolo_filtro')
-    
+    simbolo_filtro_raw = request.args.get('simbolo_filtro', '').strip() # Pega o filtro
+
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', TRANSACTIONS_PER_PAGE, type=int)
 
-    logged_in_username = session.get('username', 'Convidado') 
-    is_admin = session.get('is_admin', False) 
-    print(f"DEBUG: index() - Renderizando para utilizador: {logged_in_username}, is_admin: {is_admin}")
+    # Mapeia símbolos comuns para os tickers do YFinance se o usuário digitar o nome
+    simbolo_filtro_mapeado = SYMBOL_MAPPING.get(simbolo_filtro_raw.upper(), simbolo_filtro_raw)
 
-    try:
-        transacoes, total_transacoes = buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ordem, simbolo_filtro, page, per_page)
-        
-        posicoes_carteira, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado = calcular_posicoes_carteira(user_id)
-        
-        alertas = buscar_alertas(user_id)
+    transacoes, total_transacoes = buscar_transacoes_filtradas(
+        user_id,
+        data_inicio,
+        data_fim,
+        ordenar_por,
+        ordem,
+        simbolo_filtro=simbolo_filtro_mapeado, # Passa o símbolo mapeado
+        page=page,
+        per_page=TRANSACTIONS_PER_PAGE
+    )
 
-        all_news = []
-        ativos_com_posicao = [simbolo for simbolo, dados in posicoes_carteira.items() if dados['quantidade_total'] > 0]
-        ativos_de_alertas = [alerta['simbolo_ativo'] for alerta in alertas if alerta['status'] == 'ATIVO']
-        symbols_to_fetch_news = list(set(ativos_com_posicao + ativos_de_alertas))
+    total_pages = (total_transacoes + TRANSACTIONS_PER_PAGE - 1) // TRANSACTIONS_PER_PAGE
 
-        if symbols_to_fetch_news:
-            for simbolo_ativo in symbols_to_fetch_news[:5]: 
-                news_for_symbol = _get_financial_news_from_api(simbolo_ativo)
-                for news_item in news_for_symbol:
-                    all_news.append(news_item)
-        else:
-             all_news.append({
-                'title': "Adicione transações ou alertas para ver notícias relevantes!",
-                'link': "#",
-                'source': "Informação do Sistema",
-                'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
-                'simbolo_display': "Seu Portfólio'S"
-            })
-        
-        total_pages = (total_transacoes + per_page - 1) // per_page
-        
-    except Exception as e:
-        flash(f"Erro ao carregar dados: {e}", "danger")
-        transacoes = []
-        posicoes_carteira = {}
-        alertas = []
-        all_news = [{
-            'title': f"Erro geral ao carregar notícias: {e}",
-            'link': "#",
-            'source': "Erro do Sistema",
-            'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
-            'simbolo_display': "Sistema"
-        }]
-        total_transacoes = 0
-        total_pages = 0
-        total_valor_carteira = 0.0
-        total_lucro_nao_realizado = 0.0
-        total_prejuizo_nao_realizado = 0.0
-
-    return render_template('index.html',
+    return render_template('transactions_list.html',
+                           user_name=user_name,
                            transacoes=transacoes,
-                           posicoes_carteira=posicoes_carteira,
-                           alertas=alertas,
-                           all_news=all_news,
-                           REVERSE_SYMBOL_MAPPING=REVERSE_SYMBOL_MAPPING,
-                           SYMBOL_MAPPING=SYMBOL_MAPPING,
                            data_inicio=data_inicio,
                            data_fim=data_fim,
                            ordenar_por=ordenar_por,
                            ordem=ordem,
-                           simbolo_filtro=simbolo_filtro,
+                           simbolo_filtro=simbolo_filtro_raw, # Mantém o valor original para o campo de input
                            page=page,
-                           per_page=per_page,
-                           total_transacoes=total_transacoes,
                            total_pages=total_pages,
-                           total_valor_carteira=total_valor_carteira,
-                           total_lucro_nao_realizado=total_lucro_nao_realizado,
-                           total_prejuizo_nao_realizado=total_prejuizo_nao_realizado,
-                           logged_in_username=logged_in_username,
-                           is_admin=is_admin) 
+                           symbols_for_filter=sorted(list(SYMBOL_MAPPING.keys())))
 
-# Nova rota para a página de adicionar transação
-@app.route('/add_transaction', methods=['GET'])
+
+@app.route('/add_transaction', methods=['GET', 'POST'])
 @login_required
 def add_transaction():
-    """Renderiza o formulário para adicionar uma nova transação."""
-    return render_template('add_transaction.html') # Você precisará criar este template, se já não tiver
+    user_id = session.get('user_id')
+    user_name = session.get('username')
+    symbols = sorted(list(SYMBOL_MAPPING.keys())) # Lista de símbolos para o dropdown
 
-@app.route('/adicionar_transacao', methods=['POST'])
-@login_required
-def adicionar_transacao(): # Endpoint para processar o formulário POST de adição de transação
-    user_id = session['user_id'] 
-    try:
-        simbolo_ativo_input = request.form['simbolo_ativo'].upper()
-        simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo_input, simbolo_ativo_input)
+    if request.method == 'POST':
+        # Converta a data de string para objeto date
+        data_transacao_str = request.form['data_transacao']
+        try:
+            data_transacao = datetime.datetime.strptime(data_transacao_str, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Formato de data inválido. Use AAAA-MM-DD.', 'danger')
+            return render_template('add_transaction.html', symbols=symbols)
 
-        if simbolo_ativo_yf == simbolo_ativo_input and \
-           not any(c in simbolo_ativo_input for c in ['^', '-', '=']) and \
-           not any(simbolo_ativo_input.upper().endswith(suf)for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
-            if 4 <= len(simbolo_ativo_input) <= 6 and simbolo_ativo_input.isalnum():
-                simbolo_ativo_yf = f"{simbolo_ativo_input}.SA"
-
-        data_transacao = request.form['data_transacao']
-        hora_transacao_str = request.form.get('hora_transacao')
-        tipo_operacao = request.form['tipo_operacao'].upper()
-        preco_unitario = decimal.Decimal(request.form['preco_unitario'])
-        quantidade = decimal.Decimal(request.form['quantidade'])
-        custos_taxas = decimal.Decimal(request.form.get('custos_taxas', '0.00'))
-        observacoes = request.form.get('observacoes')
-
+        hora_transacao_str = request.form.get('hora_transacao') # Pode ser opcional
         hora_transacao = None
         if hora_transacao_str:
             try:
-                hora_transacao = datetime.datetime.strptime(hora_transacao_str,'%H:%M').time()
+                hora_transacao = datetime.datetime.strptime(hora_transacao_str, '%H:%M').time()
             except ValueError:
-                flash("Formato de hora inválido. Use HH:MM.", "danger")
-                # Redireciona de volta para a página de adicionar transação ou index
-                return redirect(url_for('add_transaction')) 
+                flash('Formato de hora inválido. Use HH:MM.', 'danger')
+                return render_template('add_transaction.html', symbols=symbols)
 
-        with MySQLConnectionManager(DB_CONFIG) as cursor_db:
-            sql = """
-            INSERT INTO transacoes (user_id, simbolo_ativo, data_transacao, hora_transacao, tipo_operacao, preco_unitario, quantidade, custos_taxas, observacoes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            cursor_db.execute(sql, (user_id, simbolo_ativo_yf, data_transacao, hora_transacao, tipo_operacao, preco_unitario, quantidade, custos_taxas, observacoes))
-        flash("Transação adicionada com sucesso!", "success")
-        
-        if user_id in portfolio_cache:
-            del portfolio_cache[user_id]
-        for key in list(prediction_cache.keys()):
-            if simbolo_ativo_yf in key:
-                del prediction_cache[key]
-        for key in list(market_data_cache.keys()):
-            if simbolo_ativo_yf in key:
-                del market_data_cache[key]
+        simbolo_ativo = request.form['simbolo_ativo']
+        quantidade = request.form['quantidade']
+        preco_unitario = request.form['preco_unitario']
+        tipo_operacao = request.form['tipo_operacao']
+        custos_taxas = request.form.get('custos_taxas', '0.00') # Pega com valor padrão '0.00'
+        observacoes = request.form.get('observacoes') # Opcional
 
-
-    except mysql.connector.Error as err:
-        flash(f"Erro ao adicionar transação: {err}", "danger")
-    except decimal.InvalidOperation:
-        flash("Erro: Preço unitário ou quantidade inválidos.", "danger")
-    except Exception as e:
-        flash(f"Erro inesperado ao adicionar transação: {e}", "danger")
-    return redirect(url_for('index')) # Redireciona para o index após adicionar
-
-
-@app.route('/edit_transaction/<int:id>', methods=['GET', 'POST'])
-@login_required
-def edit_transaction(id): # Endpoint renomeado para 'edit_transaction' para consistência
-    user_id = session['user_id']
-    if request.method == 'POST':
+        # Converte para float/decimal e trata erros
         try:
-            simbolo_ativo_input = request.form['simbolo_ativo'].upper()
-            simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo_input, simbolo_ativo_input)
+            quantidade = decimal.Decimal(quantidade)
+            preco_unitario = decimal.Decimal(preco_unitario)
+            custos_taxas = decimal.Decimal(custos_taxas)
+        except decimal.InvalidOperation:
+            flash('Quantidade, Preço Unitário ou Custos/Taxas devem ser números válidos.', 'danger')
+            return render_template('add_transaction.html', symbols=symbols)
 
-            if simbolo_ativo_yf == simbolo_ativo_input and \
-               not any(c in simbolo_ativo_input for c in ['^', '-', '=']) and \
-               not any(simbolo_ativo_input.upper().endswith(suf)for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
-                if 4 <= len(simbolo_ativo_input) <= 6 and simbolo_ativo_input.isalnum():
-                    simbolo_ativo_yf = f"{simbolo_ativo_input}.SA"
+        if quantidade <= 0 or preco_unitario <= 0:
+            flash('Quantidade e Preço Unitário devem ser maiores que zero.', 'danger')
+            return render_template('add_transaction.html', symbols=symbols)
+        
+        # Mapeia o símbolo escolhido pelo usuário para o ticker do YFinance
+        simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo.upper(), simbolo_ativo)
+        # Se não for um mapeamento direto e não tiver .SA, tenta adicionar .SA para ações brasileiras
+        if simbolo_ativo_yf == simbolo_ativo and \
+           not any(c in simbolo_ativo for c in ['^', '-', '=']) and \
+           not any(simbolo_ativo.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
+            if 4 <= len(simbolo_ativo) <= 6 and simbolo_ativo.isalnum():
+                simbolo_ativo_yf = f"{simbolo_ativo.upper()}.SA"
+        # Garante que o símbolo final é capitalizado para consistência
+        simbolo_ativo_yf = simbolo_ativo_yf.upper()
 
-            data_transacao = request.form['data_transacao']
-            hora_transacao_str = request.form.get('hora_transacao')
-            tipo_operacao = request.form['tipo_operacao'].upper()
-            preco_unitario = decimal.Decimal(request.form['preco_unitario'])
-            quantidade = decimal.Decimal(request.form['quantidade'])
-            custos_taxas = decimal.Decimal(request.form.get('custos_taxas', '0.00'))
-            observacoes = request.form.get('observacoes')
-
-            hora_transacao = None
-            if hora_transacao_str:
-                try:
-                    hora_transacao = datetime.datetime.strptime(hora_transacao_str, '%H:%M').time()
-                except ValueError:
-                    flash("Formato de hora inválido. Use HH:MM.", "danger")
-                    return redirect(url_for('edit_transaction', id=id))
-
-            with MySQLConnectionManager(DB_CONFIG) as cursor_db:
+        try:
+            with DBConnectionManager() as cursor_db: # ALTERADO AQUI
                 sql = """
-                UPDATE transacoes SET simbolo_ativo = %s, data_transacao = %s, hora_transacao = %s, tipo_operacao = %s, preco_unitario = %s, quantidade = %s, custos_taxas = %s, observacoes = %s
+                INSERT INTO transacoes (user_id, data_transacao, hora_transacao, simbolo_ativo, quantidade, preco_unitario, tipo_operacao, custos_taxas, observacoes, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cursor_db.execute(sql, (
+                    user_id,
+                    data_transacao,
+                    hora_transacao,
+                    simbolo_ativo_yf, # Usa o símbolo mapeado
+                    quantidade,
+                    preco_unitario,
+                    tipo_operacao,
+                    custos_taxas,
+                    observacoes,
+                    datetime.datetime.now()
+                ))
+                flash('Transação adicionada com sucesso!', 'success')
+                return redirect(url_for('transactions_list'))
+        except Exception as e: # Captura exceções mais gerais agora
+            flash(f'Ocorreu um erro ao adicionar a transação. Erro: {e}', 'danger')
+            print(f"Erro ao adicionar transação: {e}")
+
+    return render_template('add_transaction.html', user_name=user_name, symbols=symbols)
+
+
+@app.route('/edit_transaction/<int:transaction_id>', methods=['GET', 'POST'])
+@login_required
+def edit_transaction(transaction_id):
+    user_id = session.get('user_id')
+    user_name = session.get('username')
+    transaction = None
+    symbols = sorted(list(SYMBOL_MAPPING.keys())) # Lista de símbolos para o dropdown
+
+    try:
+        with DBConnectionManager(dictionary=True) as cursor_db: # ALTERADO AQUI
+            cursor_db.execute("SELECT * FROM transacoes WHERE id = %s AND user_id = %s", (transaction_id, user_id))
+            transaction = cursor_db.fetchone()
+    except Exception as e: # Captura exceções mais gerais agora
+        flash(f"Erro ao buscar transação para edição: {e}", "danger")
+        return redirect(url_for('transactions_list'))
+
+    if not transaction:
+        flash('Transação não encontrada ou você não tem permissão para editá-la.', 'danger')
+        return redirect(url_for('transactions_list'))
+
+    if request.method == 'POST':
+        data_transacao_str = request.form['data_transacao']
+        try:
+            data_transacao = datetime.datetime.strptime(data_transacao_str, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Formato de data inválido. Use AAAA-MM-DD.', 'danger')
+            return render_template('editar_transacao.html', transaction=transaction, symbols=symbols)
+
+        hora_transacao_str = request.form.get('hora_transacao')
+        hora_transacao = None
+        if hora_transacao_str:
+            try:
+                hora_transacao = datetime.datetime.strptime(hora_transacao_str, '%H:%M').time()
+            except ValueError:
+                flash('Formato de hora inválido. Use HH:MM.', 'danger')
+                return render_template('editar_transacao.html', transaction=transaction, symbols=symbols)
+
+        simbolo_ativo = request.form['simbolo_ativo']
+        quantidade = request.form['quantidade']
+        preco_unitario = request.form['preco_unitario']
+        tipo_operacao = request.form['tipo_operacao']
+        custos_taxas = request.form.get('custos_taxas', '0.00')
+        observacoes = request.form.get('observacoes')
+
+        try:
+            quantidade = decimal.Decimal(quantidade)
+            preco_unitario = decimal.Decimal(preco_unitario)
+            custos_taxas = decimal.Decimal(custos_taxas)
+        except decimal.InvalidOperation:
+            flash('Quantidade, Preço Unitário ou Custos/Taxas devem ser números válidos.', 'danger')
+            return render_template('editar_transacao.html', transaction=transaction, symbols=symbols)
+
+        if quantidade <= 0 or preco_unitario <= 0:
+            flash('Quantidade e Preço Unitário devem ser maiores que zero.', 'danger')
+            return render_template('editar_transacao.html', transaction=transaction, symbols=symbols)
+
+        # Mapeia o símbolo escolhido pelo usuário para o ticker do YFinance
+        simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo.upper(), simbolo_ativo)
+        # Se não for um mapeamento direto e não tiver .SA, tenta adicionar .SA para ações brasileiras
+        if simbolo_ativo_yf == simbolo_ativo and \
+           not any(c in simbolo_ativo for c in ['^', '-', '=']) and \
+           not any(simbolo_ativo.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
+            if 4 <= len(simbolo_ativo) <= 6 and simbolo_ativo.isalnum():
+                simbolo_ativo_yf = f"{simbolo_ativo.upper()}.SA"
+        # Garante que o símbolo final é capitalizado para consistência
+        simbolo_ativo_yf = simbolo_ativo_yf.upper()
+
+        try:
+            with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+                sql = """
+                UPDATE transacoes
+                SET data_transacao = %s, hora_transacao = %s, simbolo_ativo = %s, quantidade = %s,
+                    preco_unitario = %s, tipo_operacao = %s, custos_taxas = %s, observacoes = %s
                 WHERE id = %s AND user_id = %s
                 """
-                cursor_db.execute(sql, (simbolo_ativo_yf, data_transacao, hora_transacao, tipo_operacao, preco_unitario, quantidade, custos_taxas, observacoes, id, user_id))
-                if cursor_db.rowcount == 0:
-                    flash("Transação não encontrada ou não pertence ao seu utilizador.", "danger")
-                    return redirect(url_for('index'))
-            flash("Transação atualizada com sucesso!", "success")
+                cursor_db.execute(sql, (
+                    data_transacao, hora_transacao, simbolo_ativo_yf, quantidade,
+                    preco_unitario, tipo_operacao, custos_taxas, observacoes,
+                    transaction_id, user_id
+                ))
+                flash('Transação atualizada com sucesso!', 'success')
+                return redirect(url_for('transactions_list'))
+        except Exception as e: # Captura exceções mais gerais agora
+            flash(f'Ocorreu um erro ao atualizar a transação. Erro: {e}', 'danger')
+            print(f"Erro ao atualizar transação: {e}")
 
-            if user_id in portfolio_cache:
-                del portfolio_cache[user_id]
-            for key in list(prediction_cache.keys()):
-                if simbolo_ativo_yf in key:
-                    del prediction_cache[key]
-            for key in list(market_data_cache.keys()):
-                if simbolo_ativo_yf in key:
-                    del market_data_cache[key]
-
-            return redirect(url_for('index'))
-        except mysql.connector.Error as err:
-            flash(f"Erro ao editar transação: {err}", "danger")
-        except decimal.InvalidOperation:
-            flash("Erro: Preço unitário ou quantidade inválidos.", "danger")
-        except Exception as e:
-            flash(f"Erro inesperado ao editar transação: {e}", "danger")
-        return redirect(url_for('edit_transaction', id=id))
-    else:
-        transacao = None
-        try:
-            with MySQLConnectionManager(DB_CONFIG, dictionary=True) as cursor_db: # Garante dictionary=True
-                cursor_db.execute("SELECT * FROM transacoes WHERE id = %s AND user_id = %s", (id, user_id))
-                transacao_raw = cursor_db.fetchone() # Busca o resultado
-                
-                if transacao_raw:
-                    # Converte para dicionário se for uma tupla (segurança extra, já que dictionary=True deveria cuidar disso)
-                    if isinstance(transacao_raw, tuple):
-                        # Isso deve ser redundante se dictionary=True funcionar, mas é uma defesa
-                        transacao = {desc[0]: val for desc, val in zip(cursor_db.description, transacao_raw)}
-                        print(f"DEBUG: edit_transaction - Transação convertida de tupla para dict: {transacao.keys()}")
-                    else:
-                        transacao = transacao_raw # Já é um dicionário se dictionary=True funcionou
-
-                    if transacao and isinstance(transacao.get('hora_transacao'), datetime.timedelta):
-                        total_seconds = int(transacao['hora_transacao'].total_seconds())
-                        hours, remainder = divmod(total_seconds, 3600)
-                        minutes, seconds = divmod(remainder, 60)
-                        transacao['hora_transacao'] = datetime.time(hours, minutes, seconds)
-                else:
-                    flash("Transação não encontrada ou não pertence ao seu utilizador.", "danger")
-                    return redirect(url_for('index'))
-
-        except mysql.connector.Error as err:
-            flash(f"Erro ao buscar transação para edição: {err}", "danger")
-            print(f"ERRO: MySQL ao buscar transação para edição: {err}")
-        except Exception as e:
-            flash(f"Erro inesperado ao buscar transação para edição: {e}", "danger")
-            print(f"ERRO: Inesperado ao buscar transação para edição: {e}")
-
-        if transacao:
-            # print(f"DEBUG: edit_transaction - Tipo final de transacao para render: {type(transacao)}")
-            return render_template('editar_transacao.html', transacao=transacao, REVERSE_SYMBOL_MAPPING=REVERSE_SYMBOL_MAPPING)
-        # Se chegou aqui sem transacao válida ou com erro, o flash já foi enviado
-        return redirect(url_for('index'))
-
-
-@app.route('/excluir_transacao/<int:id>', methods=['POST'])
-@login_required
-def excluir_transacao(id):
-    user_id = session['user_id']
-    try:
-        with MySQLConnectionManager(DB_CONFIG) as cursor_db:
-            cursor_db.execute("DELETE FROM transacoes WHERE id = %s AND user_id = %s", (id, user_id))
-            if cursor_db.rowcount == 0:
-                flash("Transação não encontrada ou não pertence ao seu utilizador.", "danger")
-        flash("Transação excluída com sucesso!", "success")
-
-        if user_id in portfolio_cache:
-            del portfolio_cache[user_id]
-        prediction_cache.clear() 
-        market_data_cache.clear()
-
-    except mysql.connector.Error as err:
-        flash(f"Erro ao excluir transação: {err}", "danger")
-    except Exception as e:
-        flash(f"Erro inesperado ao excluir transação: {e}", "danger")
-    return redirect(url_for('index'))
-
-# --- Rota para API de Gráficos (Plotly JSON) ---
-@app.route('/api/historical_prices/<simbolo_display>')
-def historical_prices(simbolo_display):
-    try:
-        chart_type = request.args.get('type', 'line') 
-
-        final_simbolo_to_fetch = SYMBOL_MAPPING.get(simbolo_display.upper(), simbolo_display)
-
-        if final_simbolo_to_fetch == simbolo_display and \
-           not any(c in simbolo_display for c in ['^', '-', '=']) and \
-           not any(simbolo_display.upper().endswith(suf)for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
-            if 4 <= len(simbolo_display) <= 6 and simbolo_display.isalnum():
-                final_simbolo_to_fetch = f"{simbolo_display.upper()}.SA"
-
-        df_hist = get_historical_prices_yfinance_cached(final_simbolo_to_fetch, period="1y", interval="1d")
-
-        required_cols_candlestick = ['Open', 'High', 'Low', 'Close']
-        has_candlestick_data = all(col in df_hist.columns for col in required_cols_candlestick)
-
-        # Determina a moeda com base no símbolo
-        currency_symbol = "R$" # Padrão para BRL (ativos brasileiros)
-        if '.SA' not in final_simbolo_to_fetch: # Se não for ativo brasileiro (ex: BTC-USD, ^IXIC)
-            if 'USD' in final_simbolo_to_fetch or '^IXIC' in final_simbolo_to_fetch or '^DJI' in final_simbolo_to_fetch: # Dólar para criptos e índices USA
-                currency_symbol = "$"
-            elif '=F' in final_simbolo_to_fetch: # Futuros (como ouro GC=F)
-                currency_symbol = "$" # Ou outra mais específica se soubermos (ex: oz)
-            # Adicione mais regras de moeda conforme necessário para outros símbolos
-
-        if df_hist.empty or 'Close' not in df_hist.columns:
-            # Retorna uma resposta JSON que o frontend pode usar para exibir uma mensagem
-            return jsonify({
-                "error": "Dados históricos não encontrados ou insuficientes para o símbolo.",
-                "simbolo_buscado": REVERSE_SYMBOL_MAPPING.get(final_simbolo_to_fetch, final_simbolo_to_fetch),
-                "graph": { # Estrutura para o Plotly exibir uma mensagem
-                    "data": [], # Sem dados para Plotly
-                    "layout": {
-                        "title": f"Dados não disponíveis para {REVERSE_SYMBOL_MAPPING.get(final_simbolo_to_fetch, final_simbolo_to_fetch)}",
-                        "xaxis": {"visible": False}, # Esconde eixos
-                        "yaxis": {"visible": False},
-                        "annotations": [{ # Adiciona uma anotação no centro do gráfico
-                            "text": "Dados de preço histórico não disponíveis ou insuficientes.",
-                            "xref": "paper", "yref": "paper",
-                            "showarrow": False, "font": {"size": 16, "color": "#dc2626"} # Cor vermelha
-                        }]
-                    }
-                }
-            }), 404 # Retorna status 404 (Not Found)
-
-        data_traces = []
-        yaxis_title = f'Preço ({currency_symbol})' # Título do eixo Y com moeda
-        xaxis_rangeslider_visible = False 
-
-        if chart_type == 'candlestick' and has_candlestick_data:
-            data_traces.append(go.Candlestick(
-                x=df_hist.index,
-                open=df_hist['Open'],
-                high=df_hist['High'],
-                low=df_hist['Low'],
-                close=df_hist['Close'],
-                name='Candlestick',
-                # Atualiza hovertemplate com o símbolo da moeda
-                hovertemplate=f'<b>Data</b>: %{{x|%Y-%m-%d}}<br>' +
-                              f'<b>Abertura</b>: {currency_symbol} %{{open:.2f}}<br>' +
-                              f'<b>Máxima</b>: {currency_symbol} %{{high:.2f}}<br>' +
-                              f'<b>Mínima</b>: {currency_symbol} %{{low:.2f}}<br>' +
-                              f'<b>Fechamento</b>: {currency_symbol} %{{close:.2f}}<extra></extra>' 
-            ))
-            yaxis_title = f'Preço (OHLC) ({currency_symbol})'
-            xaxis_rangeslider_visible = True
-        else: # Fallback para linha se o tipo não for reconhecido ou dados candlestick não completos
-             trace = go.Scatter( 
-                x=df_hist.index,
-                y=df_hist['Close'],
-                mode='lines',
-                name='Preço de Fechamento',
-                line=dict(color='#1a73e8', width=3), 
-                # Atualiza hovertemplate com o símbolo da moeda
-                hovertemplate=f'<b>Data</b>: %{{x|%Y-%m-%d}}<br>'+
-                              f'<b>Preço</b>: {currency_symbol} %{{y:.2f}}<extra></extra>' 
-            )
-             data_traces.append(trace)
-             yaxis_title = f'Preço de Fechamento ({currency_symbol})'
-             xaxis_rangeslider_visible = False
-        
-        fig = go.Figure(data=data_traces)
-
-        fig.update_layout(
-            title_text=f"Preço Histórico de {REVERSE_SYMBOL_MAPPING.get(final_simbolo_to_fetch, final_simbolo_to_fetch)} ({chart_type.capitalize()})",
-            xaxis_title='Data',
-            yaxis_title=yaxis_title,
-            xaxis_rangeslider_visible=xaxis_rangeslider_visible, 
-            hovermode="x unified", 
-            height=550,
-            template="plotly_white",
-            xaxis=dict(
-                rangeselector=dict(
-                    buttons=list([
-                        dict(count=1, label="1m", step="month", stepmode="backward"),
-                        dict(count=3, label="3m", step="month", stepmode="backward"),
-                        dict(count=6, label="6m", step="month", stepmode="backward"),
-                        dict(count=1, label="1a", step="year", stepmode="backward"),
-                        dict(count=5, label="5a", step="year", stepmode="backward"),
-                        dict(step="all", label="Tudo")
-                    ])
-                ),
-                rangeslider=dict(visible=xaxis_rangeslider_visible), 
-                type="date"
-            )
-        )
-        
-        fig_dict = json.loads(fig.to_json())
-
-        # Estes ajustes de cor e preenchimento devem estar já no go.Scatter, mas mantemos para garantir
-        if chart_type == 'line' or chart_type == 'area':
-            if fig_dict['data'] and len(fig_dict['data']) > 0:
-                if 'line' not in fig_dict['data'][0]:
-                    fig_dict['data'][0]['line'] = {}
-                fig_dict['data'][0]['line']['color'] = '#1a73e8'
-                fig_dict['data'][0]['line']['width'] = 3
-                if chart_type == 'area':
-                    fig_dict['data'][0]['fill'] = 'tozeroy'
-                    fig_dict['data'][0]['fillcolor'] = 'rgba(26, 115, 232, 0.2)'
-                else: 
-                    if 'fill' in fig_dict['data'][0]:
-                        del fig_dict['data'][0]['fill']
-                    if 'fillcolor' in fig_dict['data'][0]:
-                        del fig_dict['data'][0]['fillcolor']
-
-
-        return jsonify(fig_dict) 
-
-    except Exception as e:
-        print(f"ERRO ao buscar dados do gráfico para {simbolo_display}: {e}")
-        # Retorna um erro genérico com uma estrutura que o frontend possa lidar
-        return jsonify({
-            "error": f"Erro interno ao buscar dados do gráfico: {str(e)}",
-            "graph": {
-                "data": [],
-                "layout": {
-                    "title": f"Erro ao carregar o gráfico de {REVERSE_SYMBOL_MAPPING.get(final_simbolo_to_fetch, final_simbolo_to_fetch)}",
-                    "xaxis": {"visible": False},
-                    "yaxis": {"visible": False},
-                    "annotations": [{
-                        "text": f"Ocorreu um erro ao carregar os dados: {str(e)}",
-                        "xref": "paper", "yref": "paper",
-                        "showarrow": False, "font": {"size": 14, "color": "#dc2626"}
-                    }]
-                }
-            }
-        }), 500
-
-# --- ROTAS DE EXPORTAÇÃO (agora por utilizador) ---
-@app.route('/export_transactions/<format>')
-@login_required
-def export_transactions(format):
-    user_id = session['user_id']
-    try:
-        data_inicio = request.args.get('data_inicio')
-        data_fim = request.args.get('data_fim')
-        ordenar_por = request.args.get('ordenar_por', 'data_transacao')
-        ordem = request.args.get('ordem', 'DESC')
-        simbolo_filtro = request.args.get('simbolo_filtro')
-        
-        transacoes_data, _ = buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ordem, simbolo_filtro, page=1, per_page=999999)
-
-        if not transacoes_data:
-            flash("Nenhuma transação encontrada para exportar com os filtros aplicados.", "warning")
-            return redirect(url_for('index'))
-
-        processed_data = []
-        for t in transacoes_data:
-            processed_data.append({
-                'ID': t['id'],
-                'Data': t['data_transacao'].strftime('%Y-%m-%d') if t['data_transacao'] else '',
-                'Hora': t['hora_transacao'].strftime('%H:%M') if t['hora_transacao'] else '',
-                'Símbolo Ativo': REVERSE_SYMBOL_MAPPING.get(t['simbolo_ativo'], t['simbolo_ativo']),
-                'Tipo Operação': t['tipo_operacao'],
-                'Preço Unitário': float(t['preco_unitario']),
-                'Quantidade': float(t['quantidade']),
-                'Custos/Taxas': float(t['custos_taxas']),
-                'Observações': t['observacoes'] if t['observacoes'] else ''
-            })
-        
-        df_export = pd.DataFrame(processed_data)
-
-        if format == 'csv':
-            csv_output = df_export.to_csv(index=False, sep=';', encoding='utf-8-sig')
-            response = app.make_response(csv_output)
-            response.headers["Content-Disposition"] = "attachment; filename=transacoes.csv"
-            response.headers["Content-type"] = "text/csv; charset=utf-8-sig"
-            return response
-        elif format == 'pdf':
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=10)
-
-            col_widths = [10, 20, 14, 26, 20, 20, 18, 18, 44] 
-            headers = ['ID', 'Data', 'Hora', 'Símbolo Ativo', 'Tipo Op.', 'Preço Un.', 'Qtd.', 'Custos', 'Obs.']
-            
-            base_line_height = 8 
-
-            pdf.set_font("Arial", style='B')
-            for i, header in enumerate(headers):
-                pdf.cell(col_widths[i], base_line_height, header, 1, 0, 'C')
-            pdf.ln(base_line_height)
-
-            pdf.set_font("Arial", style='')
-
-            for row_data in processed_data:
-                row_start_y = pdf.get_y()
-                
-                obs_text = row_data['Observações'] if row_data['Observações'] else ''
-                
-                try:
-                    text_width_obs = pdf.get_string_width(obs_text)
-                    num_lines_obs = (text_width_obs / (col_widths[8] - 2)) + 0.999 if (col_widths[8] - 2) > 0 else 1
-                    num_lines_obs = max(1, int(num_lines_obs))
-                except Exception as e:
-                    print(f"Erro ao calcular largura da string para PDF: {e}. Texto: '{obs_text}'")
-                    num_lines_obs = 1
-
-                actual_row_height = max(base_line_height, num_lines_obs * base_line_height)
-                
-                if pdf.get_y() + actual_row_height > pdf.page_break_trigger:
-                    pdf.add_page()
-                    pdf.set_font("Arial", size=10, style='B')
-                    for i, header in enumerate(headers):
-                        pdf.cell(col_widths[i], base_line_height, header, 1, 0, 'C')
-                    pdf.ln(base_line_height)
-                    pdf.set_font("Arial", style='')
-                    row_start_y = pdf.get_y()
-
-                current_x_pos = pdf.get_x()
-
-                cells_data_and_widths = [
-                    (str(row_data['ID']), col_widths[0], 'C'),
-                    (str(row_data['Data']), col_widths[1], 'C'),
-                    (str(row_data['Hora']), col_widths[2], 'C'),
-                    (str(row_data['Símbolo Ativo']), col_widths[3], 'C'),
-                    (str(row_data['Tipo Operação']), col_widths[4], 'C'),
-                    (f"{row_data['Preço Unitário']:.2f}", col_widths[5], 'R'),
-                    (f"{row_data['Quantidade']:.2f}", col_widths[6], 'R'),
-                    (f"{row_data['Custos/Taxas']:.2f}", col_widths[7], 'R')
-                ]
-
-                for text_val, width, align in cells_data_and_widths:
-                    pdf.set_xy(current_x_pos, row_start_y)
-                    pdf.cell(width, actual_row_height, text_val, 1, 0, align)
-                    current_x_pos += width
-
-                pdf.set_xy(current_x_pos, row_start_y)
-                pdf.multi_cell(col_widths[8], base_line_height, obs_text, 1, 'L', False)
-
-                pdf.set_y(row_start_y + actual_row_height)
-                pdf.set_x(10)
-
-            pdf_output = pdf.output(dest='S').encode('latin-1')
-            response = app.make_response(pdf_output)
-            response.headers["Content-Disposition"] = "attachment; filename=transacoes.pdf"
-            response.headers["Content-type"] = "application/pdf"
-            return response
+    # Para GET request, formatar data e hora para exibição no formulário
+    if transaction['data_transacao']:
+        transaction['data_transacao_formatted'] = transaction['data_transacao'].strftime('%Y-%m-%d')
+    if transaction['hora_transacao']:
+        # Converte timedelta para time se necessário (retorno do MySQL)
+        if isinstance(transaction['hora_transacao'], datetime.timedelta):
+            total_seconds = int(transaction['hora_transacao'].total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            transaction['hora_transacao_formatted'] = datetime.time(hours, minutes, seconds).strftime('%H:%M')
+        elif isinstance(transaction['hora_transacao'], datetime.time):
+            transaction['hora_transacao_formatted'] = transaction['hora_transacao'].strftime('%H:%M')
         else:
-            flash("Formato de exportação não suportado.", "danger")
-            return redirect(url_for('index'))
+            transaction['hora_transacao_formatted'] = None
+    else:
+        transaction['hora_transacao_formatted'] = None
 
-    except Exception as e:
-        flash(f"Erro ao exportar transações: {e}", "danger")
-        print(f"DEBUG: Erro detalhado na exportação: {e}")
-        return redirect(url_for('index'))
+    # Mapear o ticker de volta para o nome "amigável" se existir
+    original_simbolo_ativo_display = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+    transaction['simbolo_ativo_display'] = original_simbolo_ativo_display
 
-# --- ROTAS DE ALERTA (agora por utilizador) ---
-@app.route('/adicionar_alerta', methods=['POST'])
+
+    return render_template('editar_transacao.html',
+                           user_name=user_name,
+                           transaction=transaction,
+                           symbols=symbols)
+
+@app.route('/delete_transaction/<int:transaction_id>', methods=['POST'])
 @login_required
-def adicionar_alerta():
-    user_id = session['user_id']
+def delete_transaction(transaction_id):
+    user_id = session.get('user_id')
     try:
-        simbolo_ativo_input = request.form['simbolo_ativo'].upper()
-        simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo_input, simbolo_ativo_input)
+        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+            # Verifique se a transação pertence ao utilizador logado antes de excluir
+            cursor_db.execute("DELETE FROM transacoes WHERE id = %s AND user_id = %s", (transaction_id, user_id))
+            if cursor_db.rowcount > 0:
+                flash('Transação excluída com sucesso.', 'success')
+            else:
+                flash('Transação não encontrada ou você não tem permissão para excluí-la.', 'danger')
+    except Exception as e: # Captura exceções mais gerais agora
+        flash(f'Ocorreu um erro ao excluir a transação. Erro: {e}', 'danger')
+        print(f"Erro ao excluir transação: {e}")
+    return redirect(url_for('transactions_list'))
 
-        if simbolo_ativo_yf == simbolo_ativo_input and \
-           not any(c in simbolo_ativo_input for c in ['^', '-', '=']) and \
-           not any(simbolo_ativo_input.upper().endswith(suf)for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
-            if 4 <= len(simbolo_ativo_input) <= 6 and simbolo_ativo_input.isalnum():
-                simbolo_ativo_yf = f"{simbolo_ativo_input}.SA"
-            
-        preco_alvo = decimal.Decimal(request.form['preco_alvo'])
-        tipo_alerta = request.form['tipo_alerta'].upper()
-
-        with MySQLConnectionManager(DB_CONFIG) as cursor_db:
-            sql = """
-            INSERT INTO alertas_preco (user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao)
-            VALUES (%s, %s, %s, %s, 'ATIVO', %s)
-            """
-            cursor_db.execute(sql, (user_id, simbolo_ativo_yf, preco_alvo, tipo_alerta, datetime.datetime.now()))
-        flash("Alerta de preço adicionado com sucesso!", "success")
-
-        if user_id in portfolio_cache:
-            del portfolio_cache[user_id]
-        for key in list(news_cache.keys()):
-            # Adicionado um mapeamento inverso para limpar cache de notícias
-            reversed_symbol = REVERSE_SYMBOL_MAPPING.get(key, key)
-            if simbolo_ativo_yf == key or simbolo_ativo_yf == reversed_symbol:
-                del news_cache[key]
-        for key in list(prediction_cache.keys()):
-            if simbolo_ativo_yf in key:
-                del prediction_cache[key]
-        for key in list(market_data_cache.keys()):
-            if simbolo_ativo_yf in key:
-                del market_data_cache[key]
-
-    except mysql.connector.Error as err:
-        flash(f"Erro ao adicionar alerta: {err}", "danger")
-    except decimal.InvalidOperation:
-        flash("Erro: Preço alvo inválido.", "danger")
-    except Exception as e:
-        flash(f"Erro inesperado ao adicionar alerta: {e}", "danger")
-    return redirect(url_for('index')) 
-
-@app.route('/excluir_alerta', methods=['POST'])
+@app.route('/admin/dashboard')
 @login_required
-def excluir_alerta():
-    user_id = session['user_id']
-    try:
-        alerta_id = request.form.get('id')
-        if not alerta_id:
-            flash("ID do alerta não fornecido para exclusão.", "danger")
-            return redirect(url_for('index'))
-            
-        # Garante que o cursor retorna um dicionário
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True) as cursor_db:
-            cursor_db.execute("SELECT simbolo_ativo FROM alertas_preco WHERE id = %s AND user_id = %s", (alerta_id, user_id))
-            alerta_to_delete = cursor_db.fetchone()
-            
-            cursor_db.execute("DELETE FROM alertas_preco WHERE id = %s AND user_id = %s", (alerta_id, user_id))
-            if cursor_db.rowcount == 0:
-                flash("Alerta não encontrado ou não pertence ao seu utilizador.", "danger")
-        flash("Alerta de preço excluído com sucesso!", "success")
-
-        if user_id in portfolio_cache:
-            del portfolio_cache[user_id]
-        
-        # Estas verificações agora funcionarão corretamente com um dicionário
-        if alerta_to_delete and alerta_to_delete['simbolo_ativo'] in news_cache:
-            del news_cache[alerta_to_delete['simbolo_ativo']]
-        if alerta_to_delete:
-            simbolo_alerta = alerta_to_delete['simbolo_ativo']
-            for key in list(prediction_cache.keys()):
-                if simbolo_alerta in key:
-                    del prediction_cache[key]
-            for key in list(market_data_cache.keys()):
-                if simbolo_alerta in key:
-                    del market_data_cache[key]
-
-    except mysql.connector.Error as err:
-        flash(f"Erro ao excluir alerta: {err}", "danger")
-    except Exception as e:
-        flash(f"Erro inesperado ao excluir alerta: {e}", "danger")
-    return redirect(url_for('index')) 
-
-# --- Rotas de Administração ---
-@app.route('/admin_dashboard')
-@login_required
-@admin_required 
+@admin_required
 def admin_dashboard():
-    print(f"DEBUG: Acedendo admin_dashboard como user_id: {session.get('user_id')}")
     users = get_all_users()
-    print(f"DEBUG: admin_dashboard - Utilizadores para o template: {users}")
-    return render_template('admin_dashboard.html', users=users)
+    admin_count = get_admin_count() # Adicionado para exibir a contagem de admins
+    return render_template('admin_dashboard.html', users=users, admin_count=admin_count)
+
+@app.route('/admin/toggle_admin/<int:user_id>', methods=['POST'])
+@login_required
+@admin_required
+def toggle_admin(user_id):
+    if user_id == session.get('user_id'):
+        flash('Você não pode alterar seu próprio status de administrador.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        flash('Utilizador não encontrado.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    # Se o alvo for um admin e for o último admin, não permitir a desativação
+    if target_user['is_admin'] and get_admin_count() <= 1:
+        flash('Não é possível remover o último administrador do sistema.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    new_status = not target_user['is_admin'] # Inverte o status atual
+
+    if toggle_user_admin_status(user_id, new_status):
+        action = 'PROMOVIDO_A_ADMIN' if new_status else 'REMOVIDO_DE_ADMIN'
+        admin_user_id = session.get('user_id')
+        log_admin_action(admin_user_id, action, target_user_id=user_id, details={'new_status': new_status})
+        flash(f"Status de administrador de '{target_user['username']}' alterado para {'Admin' if new_status else 'Utilizador Comum'}.", 'success')
+    else:
+        flash('Ocorreu um erro ao alterar o status de administrador.', 'danger')
+    return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/delete_user/<int:user_id>', methods=['POST'])
 @login_required
 @admin_required
-def admin_delete_user(user_id):
+def delete_user(user_id):
+    if user_id == session.get('user_id'):
+        flash('Você não pode excluir sua própria conta.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        flash('Utilizador não encontrado.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    # Prevenir exclusão do último admin
+    if target_user['is_admin'] and get_admin_count() <= 1:
+        flash('Não é possível excluir o último administrador do sistema.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    # Log antes de tentar excluir (para ter o username do target)
     admin_user_id = session.get('user_id')
-    user_to_delete_username = "Desconhecido" 
+    log_admin_action(admin_user_id, 'EXCLUSAO_UTILIZADOR', target_user_id=user_id, details={'username_alvo': target_user['username']})
 
-    if user_id == admin_user_id:
-        flash("Você não pode excluir sua própria conta de administrador.", "danger")
-        return redirect(url_for('admin_dashboard'))
 
-    user_to_delete = get_user_by_id(user_id)
-    if not user_to_delete:
-        flash(f"Utilizador com ID {user_id} não encontrado.", "danger")
-        return redirect(url_for('admin_dashboard'))
-    user_to_delete_username = user_to_delete['username']
-
-    if user_to_delete['is_admin']:
-        admin_count = get_admin_count()
-        if admin_count <= 1:
-            flash("Não é possível excluir o último utilizador administrador do sistema.", "danger")
-            return redirect(url_for('admin_dashboard'))
-        elif admin_count == 2 and user_id != admin_user_id:
-             flash("Não é possível excluir o outro utilizador administrador se você for o único restante.", "danger")
-             return redirect(url_for('admin_dashboard'))
-    
     if delete_user_from_db(user_id):
-        flash(f"Utilizador {user_to_delete_username} (ID: {user_id}) excluído com sucesso.", "success")
-        log_admin_action(admin_user_id, 'USER_DELETED', target_user_id=user_id, details={'username': user_to_delete_username})
-
-        portfolio_cache.clear() 
-        news_cache.clear()
-        prediction_cache.clear()
-        market_data_cache.clear()
+        flash(f"Utilizador '{target_user['username']}' e todas as suas transações foram excluídos com sucesso.", 'success')
     else:
-        flash(f"Erro ao excluir utilizador {user_to_delete_username} (ID: {user_id}).", "danger")
+        flash('Ocorreu um erro ao excluir o utilizador.', 'danger')
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/reset_password/<int:user_id>', methods=['POST'])
 @login_required
 @admin_required
-def admin_reset_password(user_id):
-    admin_user_id = session.get('user_id')
-    new_password = request.form['new_password']
-    user_target_username = "Desconhecido" 
+def reset_password(user_id):
+    if user_id == session.get('user_id'):
+        flash('Você não pode redefinir sua própria palavra-passe por aqui.', 'danger')
+        return redirect(url_for('admin_dashboard'))
 
-    user_target = get_user_by_id(user_id)
-    if user_target:
-        user_target_username = user_target['username']
-    
-    if not new_password:
-        flash("A nova palavra-passe não pode estar vazia.", "danger")
+    new_password = request.form.get('new_password')
+    if not new_password or len(new_password) < 6:
+        flash('A nova palavra-passe deve ter pelo menos 6 caracteres.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        flash('Utilizador não encontrado.', 'danger')
         return redirect(url_for('admin_dashboard'))
 
     if update_user_password(user_id, new_password):
-        flash(f"Palavra-passe do utilizador {user_target_username} (ID: {user_id}) redefinida com sucesso.", "success")
-        log_admin_action(admin_user_id, 'PASSWORD_RESET', target_user_id=user_id, details={'username': user_target_username})
+        admin_user_id = session.get('user_id')
+        log_admin_action(admin_user_id, 'REDEFINICAO_SENHA_UTILIZADOR', target_user_id=user_id, details={'username_alvo': target_user['username']})
+        flash(f"Palavra-passe de '{target_user['username']}' redefinida com sucesso.", 'success')
     else:
-        flash(f"Erro ao redefinir palavra-passe do utilizador {user_target_username} (ID: {user_id}).", "danger")
+        flash('Ocorreu um erro ao redefinir a palavra-passe.', 'danger')
     return redirect(url_for('admin_dashboard'))
 
-@app.route('/admin/toggle_admin/<int:user_id>', methods=['POST'])
+
+@app.route('/admin/audit_logs')
 @login_required
 @admin_required
-def admin_toggle_admin(user_id):
-    admin_user_id = session.get('user_id')
+def admin_audit_logs():
+    logs = []
+    try:
+        with DBConnectionManager(dictionary=True) as cursor_db: # ALTERADO AQUI
+            cursor_db.execute("SELECT * FROM admin_audit_logs ORDER BY timestamp DESC")
+            logs = cursor_db.fetchall()
+            # Tenta fazer o parse do JSON na coluna 'details'
+            for log in logs:
+                if log['details']:
+                    try:
+                        log['details_parsed'] = json.loads(log['details'])
+                    except json.JSONDecodeError:
+                        log['details_parsed'] = {'error': 'Invalid JSON'}
+                else:
+                    log['details_parsed'] = {}
+    except Exception as e: # Captura exceções mais gerais agora
+        flash(f"Erro ao carregar logs de auditoria: {e}", "danger")
+        print(f"Erro ao carregar logs de auditoria: {e}")
+    return render_template('admin_audit_logs.html', logs=logs)
 
-    if user_id == admin_user_id:
-        flash("Você não pode alterar seu próprio status de administrador através desta interface.", "danger")
-        return redirect(url_for('admin_dashboard'))
-
-    user_data = get_user_by_id(user_id)
-    if not user_data:
-        flash(f"Utilizador com ID {user_id} não encontrado.", "danger")
-        return redirect(url_for('admin_dashboard'))
-
-    current_is_admin_status = bool(user_data['is_admin'])
-    new_status = not current_is_admin_status 
-    user_target_username = user_data['username'] 
-
-    if current_is_admin_status and not new_status: 
-        admin_count = get_admin_count()
-        if admin_count <= 1: 
-            flash("Não é possível remover o status de administrador do último utilizador administrador do sistema.", "danger")
-            return redirect(url_for('admin_dashboard'))
-        elif admin_count == 2 and user_id != admin_user_id:
-             pass
-
-    if toggle_user_admin_status(user_id, new_status):
-        status_message = "promovido a administrador" if new_status else "rebaixado a utilizador comum"
-        flash(f"Utilizador {user_target_username} foi {status_message} com sucesso.", "success")
-        log_admin_action(admin_user_id, 'ADMIN_STATUS_CHANGED', target_user_id=user_id, 
-                         details={'username': user_target_username, 'old_status': current_is_admin_status, 'new_status': new_status})
-    else:
-        flash(f"Erro ao alterar status de administrador para o utilizador {user_target_username}.", "danger")
-    
-    return redirect(url_for('admin_dashboard'))
-
-# --- Rota para a Página de Perfil do Utilizador ---
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
@@ -1731,150 +1337,77 @@ def profile():
     user = get_user_by_id(user_id)
 
     if not user:
-        flash("Erro: Utilizador não encontrado.", "danger")
+        flash('Usuário não encontrado.', 'danger')
         return redirect(url_for('index'))
 
     if request.method == 'POST':
         full_name = request.form['full_name']
         email = request.form['email']
-        contact_number = request.form.get('contact_number')
+        contact_number = request.form.get('contact_number') # Pode ser None
 
         if not full_name or not email:
-            flash("Nome completo e email são obrigatórios.", "danger")
-            return redirect(url_for('profile'))
-        
-        existing_user_with_email = get_user_by_email(email)
-        if existing_user_with_email and existing_user_with_email['id'] != user_id:
-            flash("Este email já está em uso por outra conta.", "danger")
-            return redirect(url_for('profile'))
+            flash('Nome completo e email são obrigatórios.', 'danger')
+            return render_template('profile.html', user=user)
+
+        # Verifica se o novo email já está em uso por outro usuário
+        user_with_same_email = get_user_by_email(email)
+        if user_with_same_email and user_with_same_email['id'] != user_id:
+            flash('Este endereço de email já está registado por outro utilizador.', 'danger')
+            return render_template('profile.html', user=user)
 
         if update_user_profile_data(user_id, full_name, email, contact_number):
-            flash("Perfil atualizado com sucesso!", "success")
-            user = get_user_by_id(user_id) 
-            return render_template('profile.html', user=user)
+            flash('Perfil atualizado com sucesso!', 'success')
+            # Atualiza os dados do usuário na sessão se necessário
+            # user_data['email'] = email
+            # user_data['full_name'] = full_name
+            # user_data['contact_number'] = contact_number
+            # Redireciona para GET para evitar reenvio de formulário
+            return redirect(url_for('profile'))
         else:
-            flash("Erro ao atualizar o perfil. Tente novamente.", "danger")
-            
+            flash('Ocorreu um erro ao atualizar o perfil.', 'danger')
+
     return render_template('profile.html', user=user)
 
-
-# --- ROTA para ver todas as transações ---
-@app.route('/view_transactions')
+@app.route('/profile/change_password', methods=['POST'])
 @login_required
-def view_transactions():
-    """Renderiza a página principal com os filtros para exibir todas as transações."""
+def change_password():
     user_id = session.get('user_id')
-        
-    data_inicio = request.args.get('data_inicio')
-    data_fim = request.args.get('data_fim')
-    ordenar_por = request.args.get('ordenar_por', 'data_transacao')
-    ordem = request.args.get('ordem', 'DESC')
-    simbolo_filtro = request.args.get('simbolo_filtro')
-    
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', TRANSACTIONS_PER_PAGE, type=int)
+    current_password = request.form['current_password']
+    new_password = request.form['new_password']
+    confirm_new_password = request.form['confirm_new_password']
 
-    logged_in_username = session.get('username', 'Convidado') 
-    is_admin = session.get('is_admin', False) 
+    user = get_user_by_id(user_id)
+    if not user or not check_password_hash(user['password_hash'], current_password):
+        flash('Palavra-passe atual incorreta.', 'danger')
+        return redirect(url_for('profile'))
 
-    try:
-        transacoes, total_transacoes = buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ordem, simbolo_filtro, page, per_page)
-        
-        # Estas informações podem ser opcionais na view_transactions, dependendo do design
-        # Mas para simplificar, vamos passar dados vazios se não for a index.
-        posicoes_carteira = {}
-        total_valor_carteira = 0.0
-        total_lucro_nao_realizado = 0.0
-        total_prejuizo_nao_realizado = 0.0
-        alertas = []
-        all_news = []
+    if new_password != confirm_new_password:
+        flash('A nova palavra-passe e a confirmação não coincidem.', 'danger')
+        return redirect(url_for('profile'))
 
-        total_pages = (total_transacoes + per_page - 1) // per_page
-        
-    except Exception as e:
-        flash(f"Erro ao carregar dados: {e}", "danger")
-        transacoes = []
-        total_transacoes = 0
-        total_pages = 0
+    if len(new_password) < 6:
+        flash('A nova palavra-passe deve ter pelo menos 6 caracteres.', 'danger')
+        return redirect(url_for('profile'))
+
+    if update_user_password(user_id, new_password):
+        flash('Palavra-passe atualizada com sucesso!', 'success')
+    else:
+        flash('Ocorreu um erro ao atualizar a palavra-passe.', 'danger')
+
+    return redirect(url_for('profile'))
 
 
-    return render_template('index.html',
-                           transacoes=transacoes,
-                           posicoes_carteira=posicoes_carteira, # Pode ser vazio aqui
-                           alertas=alertas, # Pode ser vazio aqui
-                           all_news=all_news, # Pode ser vazio aqui
-                           REVERSE_SYMBOL_MAPPING=REVERSE_SYMBOL_MAPPING,
-                           SYMBOL_MAPPING=SYMBOL_MAPPING,
-                           data_inicio=data_inicio,
-                           data_fim=data_fim,
-                           ordenar_por=ordenar_por,
-                           ordem=ordem,
-                           simbolo_filtro=simbolo_filtro,
-                           page=page,
-                           per_page=per_page,
-                           total_transacoes=total_transacoes,
-                           total_pages=total_pages,
-                           total_valor_carteira=total_valor_carteira, # Pode ser zero aqui
-                           total_lucro_nao_realizado=total_lucro_nao_realizado, # Pode ser zero aqui
-                           total_prejuizo_nao_realizado=total_prejuizo_nao_realizado, # Pode ser zero aqui
-                           logged_in_username=logged_in_username,
-                           is_admin=is_admin)
-
-
-# --- ROTA: Exibir Logs de Auditoria ---
-@app.route('/admin/audit_logs')
+@app.route('/predict_price/<simbolo>')
 @login_required
-@admin_required
-def admin_audit_logs_view():
-    logs = []
-    print("DEBUG: admin_audit_logs_view - Iniciando busca de logs.")
-    try:
-        with MySQLConnectionManager(DB_CONFIG, dictionary=True, buffered=True) as cursor_db:
-            print("DEBUG: admin_audit_logs_view - Cursor bufferizado criado.")
-            sql = """
-            SELECT 
-                al.id, 
-                al.action_type, 
-                al.timestamp, 
-                al.details,
-                al.admin_username_at_action AS admin_username,    
-                al.target_username_at_action AS target_username,  
-                al.admin_user_id, 
-                al.target_user_id 
-            FROM admin_audit_logs al
-            ORDER BY al.timestamp DESC
-            LIMIT 50; 
-            """
-            cursor_db.execute(sql)
-            print("DEBUG: admin_audit_logs_view - Consulta executada. Buscando resultados...")
-            logs = cursor_db.fetchall() 
-            print(f"DEBUG: admin_audit_logs_view - {len(logs)} logs buscados.")
-            
-            for log in logs:
-                try:
-                    if log['details']:
-                        log['details'] = json.loads(log['details'])
-                    else:
-                        log['details'] = {}
-                except json.JSONDecodeError as json_err:
-                    print(f"WARNING: Log ID {log.get('id', 'N/A')} has malformed JSON details: {log.get('details', 'N/A')}. Error: {json_err}")
-                    log['details'] = {"error": "Malformed JSON in details", "original_data": log.get('details')}
-                except Exception as parse_error:
-                    print(f"WARNING: Log ID {log.get('id', 'N/A')} has unexpected error parsing details: {parse_error}. Original data: {log.get('details', 'N/A')}")
-                    log['details'] = {"error": f"Failed to parse details: {parse_error}", "original_data": log.get('details')}
-        print("DEBUG: admin_audit_logs_view - Contexto de conexão encerrado.")
-
-    except mysql.connector.Error as err:
-        flash(f"Erro MySQL ao buscar logs de auditoria: {err}", "danger")
-        print(f"ERRO: admin_audit_logs_view - Erro MySQL: {err}")
-    except Exception as e:
-        flash(f"Erro inesperado ao buscar logs de auditoria: {e}", "danger")
-        print(f"ERRO: admin_audit_logs_view - Erro inesperado: {e}")
-
-    return render_template('admin_audit_logs.html', logs=logs)
-
+def predict_price_api(simbolo):
+    predicted_price = get_predicted_price_for_display(simbolo)
+    if predicted_price is not None:
+        return jsonify({'simbolo': simbolo, 'predicted_price': predicted_price})
+    else:
+        return jsonify({'error': 'Não foi possível obter previsão para este símbolo.', 'simbolo': simbolo}), 404
 
 if __name__ == '__main__':
-    # Esta é a forma padrão e mais robusta de rodar o aplicativo Flask.
-    # O próprio app.run(debug=True) já lida com o reloader.
-    app.run(debug=True, port=5000)
+    # A porta será fornecida pelo Render na variável de ambiente PORT
+    # Use 0.0.0.0 para que o servidor seja acessível externamente
+    port = int(os.environ.get("PORT", 5000)) # 5000 é um fallback para desenvolvimento local
+    app.run(debug=True, host='0.0.0.0', port=port)
