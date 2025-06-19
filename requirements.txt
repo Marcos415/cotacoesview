@@ -1,0 +1,13 @@
+Flask
+flask-cors
+werkzeug
+pandas
+yfinance
+python-dotenv
+requests
+beautifulsoup4
+fpdf
+plotly
+gunicorn
+psycopg2-binary
+mysql-connector-python
