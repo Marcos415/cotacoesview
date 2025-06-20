@@ -4,7 +4,7 @@ import os
 import joblib
 import pandas as pd
 import yfinance as yf
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, g
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
@@ -35,19 +35,55 @@ else:
 
 CORS(app)
 
+# --- Constantes de Mapeamento de Símbolos ---
+SYMBOL_MAPPING = {
+    'PETROBRAS': 'PETR4.SA',
+    'VALE': 'VALE3.SA',
+    'ITAU': 'ITUB4.SA',
+    'BRADESCO': 'BBDC4.SA',
+    'AMBEV': 'ABEV3.SA',
+    'B3': 'B3SA3.SA',
+    'WEG': 'WEGE3.SA',
+    'MAGALU': 'MGLU3.SA',
+    'AMERICANAS': 'AMER3.SA',
+    'ELETROBRAS': 'ELET3.SA',
+    'COSAN': 'CSAN3.SA',
+    'IBOVESPA': '^BVSP',
+    'BITCOIN': 'BTC-USD',
+    'ETHEREUM': 'ETH-USD',
+    'OURO_FUTURO': 'GC=F',
+    'NASDAQ_COMPOSITE': '^IXIC',
+    'RUMO S.A.': 'RAIL3.SA',
+    'DOW_JONES': '^DJI'
+}
+
+REVERSE_SYMBOL_MAPPING = {}
+for name, ticker in SYMBOL_MAPPING.items():
+    REVERSE_SYMBOL_MAPPING[ticker] = name
+    if '.SA' in ticker:
+        REVERSE_SYMBOL_MAPPING[ticker.replace('.SA', '')] = name # Permite buscar PETR4 e mapear para PETROBRAS
+    elif '^' in ticker or '-' in ticker or '=' in ticker:
+        REVERSE_SYMBOL_MAPPING[ticker] = name
+    else:
+        REVERSE_SYMBOL_MAPPING[ticker] = name # Se não for .SA, mantem o ticker original (ex: BTC-USD)
+
+
+# --- REGISTRA VARIÁVEIS GLOBAIS NO AMBIENTE JINJA2 ---
 app.jinja_env.globals['now'] = datetime.datetime.now
+app.jinja_env.globals['SYMBOL_MAPPING'] = SYMBOL_MAPPING
+app.jinja_env.globals['REVERSE_SYMBOL_MAPPING'] = REVERSE_SYMBOL_MAPPING
 
 # --- CONFIGURAÇÃO DO CACHE ---
 market_data_cache = {}
 news_cache = {}
 portfolio_cache = {}
 prediction_cache = {}
-historical_chart_cache = {} # Novo cache para dados de gráficos históricos
+historical_chart_cache = {}
 
-MARKET_DATA_CACHE_TTL = 300
-NEWS_CACHE_TTL = 3600
-PORTFOLIO_CACHE_TTL = 120
-PREDICTION_CACHE_TTL = 600
+MARKET_DATA_CACHE_TTL = 300 # 5 minutos
+NEWS_CACHE_TTL = 3600      # 1 hora
+PORTFOLIO_CACHE_TTL = 120  # 2 minutos
+PREDICTION_CACHE_TTL = 600 # 10 minutos
 HISTORICAL_CHART_CACHE_TTL = 3600 # 1 hora para gráficos históricos
 
 def is_cache_fresh(cache, key, ttl):
@@ -197,37 +233,6 @@ class DBConnectionManager:
                 except Exception as err:
                     print(f"ERRO: DBConnectionManager - Erro ao fechar conexão no __exit__: {err}")
 
-# --- Dicionário de Mapeamento de Símbolos ---
-SYMBOL_MAPPING = {
-    'PETROBRAS': 'PETR4.SA',
-    'VALE': 'VALE3.SA',
-    'ITAU': 'ITUB4.SA',
-    'BRADESCO': 'BBDC4.SA',
-    'AMBEV': 'ABEV3.SA',
-    'B3': 'B3SA3.SA',
-    'WEG': 'WEGE3.SA',
-    'MAGALU': 'MGLU3.SA',
-    'AMERICANAS': 'AMER3.SA',
-    'ELETROBRAS': 'ELET3.SA',
-    'COSAN': 'CSAN3.SA',
-    'IBOVESPA': '^BVSP',
-    'BITCOIN': 'BTC-USD',
-    'ETHEREUM': 'ETH-USD',
-    'OURO_FUTURO': 'GC=F',
-    'NASDAQ_COMPOSITE': '^IXIC',
-    'RUMO S.A.': 'RAIL3.SA',
-    'DOW_JONES': '^DJI'
-}
-
-REVERSE_SYMBOL_MAPPING = {}
-for name, ticker in SYMBOL_MAPPING.items():
-    REVERSE_SYMBOL_MAPPING[ticker] = name
-    if '.SA' in ticker:
-        REVERSE_SYMBOL_MAPPING[ticker.replace('.SA', '')] = name
-    elif '^' in ticker or '-' in ticker or '=' in ticker:
-        REVERSE_SYMBOL_MAPPING[ticker] = name
-    else:
-        REVERSE_SYMBOL_MAPPING[ticker] = name
 
 # --- Decorators para Autenticação e Autorização ---
 def login_required(f):
@@ -628,20 +633,21 @@ def calcular_posicoes_carteira(user_id):
                 elif tipo == 'VENDA':
                     if estado_ativo[simbolo]['quantidade'] > 0:
                         if quantidade <= estado_ativo[simbolo]['quantidade']:
+                            # Calcula o custo médio antes da venda
                             custo_medio_atual = estado_ativo[simbolo]['custo_acumulado'] / estado_ativo[simbolo]['quantidade']
                             custo_das_vendidas = quantidade * custo_medio_atual
 
-                            estado_ativo[simbolo]['quantidade'] -= quantidade # Corrigido de 'quantity' para 'quantidade'
+                            estado_ativo[simbolo]['quantidade'] -= quantidade
                             estado_ativo[simbolo]['custo_acumulado'] -= (custo_das_vendidas + custos_taxas)
 
-                            if estado_ativo[simbolo]['quantidade'] <= 0.00001:
+                            if estado_ativo[simbolo]['quantidade'] <= 0.00001: # Lida com imprecisões de float
                                 estado_ativo[simbolo]['quantidade'] = 0.0
                                 estado_ativo[simbolo]['custo_acumulado'] = 0.0
-                        else:
+                        else: # Venda de mais do que o que se tem, zera a posição
                             estado_ativo[simbolo]['quantidade'] = 0.0
                             estado_ativo[simbolo]['custo_acumulado'] = 0.0
                     else:
-                        pass
+                        pass # Ignora vendas se não houver quantidade para vender
 
             for simbolo, dados_posicao in estado_ativo.items():
                 if dados_posicao['quantidade'] > 0:
@@ -724,12 +730,12 @@ def fetch_news(query):
 
 # --- NOVA FUNÇÃO: Criar tabelas se não existirem ---
 def create_tables_if_not_exist():
-    print("DEBUG: Verificando e criando tabelas se necessário...")
+    print("DEBUG: Iniciando verificação e criação de tabelas...")
     try:
         with DBConnectionManager() as cursor_db:
-            # Tabela 'users'
             if DB_TYPE == 'postgresql':
-                print("Executando SQL: CREATE TABLE IF NOT EXISTS users (...")
+                # Tabela 'users'
+                print("DEBUG: Tentando criar tabela 'users' (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id SERIAL PRIMARY KEY,
@@ -742,9 +748,10 @@ def create_tables_if_not_exist():
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("Comando SQL executado com sucesso.")
+                print("DEBUG: Tabela 'users' verificada/criada.")
 
-                print("Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (...")
+                # Tabela 'transacoes' (depende de 'users')
+                print("DEBUG: Tentando criar tabela 'transacoes' (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS transacoes (
                         id SERIAL PRIMARY KEY,
@@ -761,25 +768,27 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("Comando SQL executado com sucesso.")
+                print("DEBUG: Tabela 'transacoes' verificada/criada.")
 
-                print("Executando SQL: CREATE TABLE IF NOT EXISTS alerts (...")
+                # Tabela 'alerts' (depende de 'users')
+                print("DEBUG: Tentando criar tabela 'alerts' (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS alerts (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         simbolo_ativo VARCHAR(20) NOT NULL,
                         preco_alvo DECIMAL(10, 2) NOT NULL,
-                        tipo_alerta VARCHAR(10) NOT NULL,
-                        status VARCHAR(20) DEFAULT 'ATIVO' NOT NULL,
+                        tipo_alerta VARCHAR(10) NOT NULL, -- 'ACIMA' ou 'ABAIXO'
+                        status VARCHAR(20) DEFAULT 'ATIVO' NOT NULL, -- 'ATIVO', 'DISPARADO', 'CANCELADO'
                         data_criacao TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                         data_disparo TIMESTAMP WITH TIME ZONE,
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("Comando SQL executado com sucesso.") # Confirma que Alerts foi adicionado
+                print("DEBUG: Tabela 'alerts' verificada/criada.")
 
-                print("Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (...")
+                # Tabela 'admin_audit_logs'
+                print("DEBUG: Tentando criar tabela 'admin_audit_logs' (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS admin_audit_logs (
                         id SERIAL PRIMARY KEY,
@@ -788,13 +797,14 @@ def create_tables_if_not_exist():
                         action_type VARCHAR(50) NOT NULL,
                         target_user_id INTEGER,
                         target_username_at_action VARCHAR(80),
-                        details JSONB,
+                        details JSONB, -- PostgreSQL uses JSONB for JSON data
                         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("Comando SQL executado com sucesso.")
+                print("DEBUG: Tabela 'admin_audit_logs' verificada/criada.")
+
             else: # MySQL
-                print("Executando SQL: CREATE TABLE IF NOT EXISTS users (...")
+                print("DEBUG: Tentando criar tabela 'users' (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -807,9 +817,9 @@ def create_tables_if_not_exist():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("Comando SQL executado com sucesso.")
+                print("DEBUG: Tabela 'users' verificada/criada.")
 
-                print("Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (...")
+                print("DEBUG: Tentando criar tabela 'transacoes' (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS transacoes (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -826,9 +836,9 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("Comando SQL executado com sucesso.")
+                print("DEBUG: Tabela 'transacoes' verificada/criada.")
 
-                print("Executando SQL: CREATE TABLE IF NOT EXISTS alerts (...")
+                print("DEBUG: Tentando criar tabela 'alerts' (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS alerts (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -842,9 +852,9 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("Comando SQL executado com sucesso.") # Confirma que Alerts foi adicionado
+                print("DEBUG: Tabela 'alerts' verificada/criada.")
 
-                print("Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (...")
+                print("DEBUG: Tentando criar tabela 'admin_audit_logs' (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS admin_audit_logs (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -857,10 +867,12 @@ def create_tables_if_not_exist():
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("Comando SQL executado com sucesso.")
+                print("DEBUG: Tabela 'admin_audit_logs' verificada/criada.")
             print("DEBUG: Verificação e criação de tabelas concluída.")
     except Exception as e:
         print(f"ERRO: Falha ao verificar/criar tabelas: {e}")
+        # É CRÍTICO que a aplicação NÃO continue se as tabelas essenciais não puderem ser criadas
+        # ou haverá mais erros. Re-lança a exceção.
         raise
 
 # --- ROTAS DA APLICAÇÃO ---
@@ -1086,10 +1098,6 @@ def logout():
 @app.route('/transactions', methods=['GET', 'POST'])
 @login_required
 def transactions_list():
-    """
-    Esta rota agora é principalmente para visualização da lista de transações,
-    independentemente do dashboard. O dashboard na rota '/' já exibe as transações recentes.
-    """
     user_id = session.get('user_id')
     user_name = session.get('username')
 
@@ -1125,8 +1133,7 @@ def transactions_list():
                            ordem=ordem,
                            simbolo_filtro=simbolo_filtro_raw,
                            page=page,
-                           total_pages=total_pages,
-                           symbols_for_filter=sorted(list(SYMBOL_MAPPING.keys())))
+                           total_pages=total_pages)
 
 
 @app.route('/add_transaction', methods=['GET', 'POST'])
@@ -1183,7 +1190,6 @@ def add_transaction():
             flash('Preço Unitário deve ser maior que zero.', 'danger')
             return render_template('add_transaction.html', symbols=symbols)
         
-        # Garante que o símbolo_ativo_yf seja um dos símbolos do SYMBOL_MAPPING ou o próprio símbolo UPPERCASE
         simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo.upper(), simbolo_ativo)
         if simbolo_ativo_yf == simbolo_ativo and \
            not any(c in simbolo_ativo for c in ['^', '-', '=']) and \
