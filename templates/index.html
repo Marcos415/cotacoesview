@@ -111,9 +111,9 @@
             </div>
             <div class="mt-4 text-sm opacity-90">
                 <p>Lucro/Prejuízo flutuante das suas posições abertas.</p>
-                {# CORREÇÃO AQUI: Adiciona if para evitar divisão por zero #}
+                {# CORREÇÃO DE ZERO DIVISION ERROR AQUI #}
                 {% set lucro_total_consolidado = total_lucro_nao_realizado + total_prejuizo_nao_realizado %}
-                {% if total_valor_carteira > 0 %}
+                {% if total_valor_carteira is not none and total_valor_carteira > 0 %}
                     (Valor Percentual): {{ (lucro_total_consolidado / total_valor_carteira * 100) | floatformat(2) }}%
                 {% else %}
                     (Valor Percentual): 0.00%
@@ -125,7 +125,7 @@
         <div class="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white flex flex-col justify-between transform transition-transform hover:scale-105">
             <div>
                 <p class="text-sm font-medium opacity-80">Número de Ativos Diferentes</p>
-                <p class="text-3xl font-bold mt-1">{{ posicoes|length }}</p> {# CORREÇÃO AQUI: 'posicoes' em vez de 'posicoes_carteira' #}
+                <p class="text-3xl font-bold mt-1">{{ posicoes|length }}</p> {# CORREÇÃO: Usando 'posicoes' #}
             </div>
             <div class="mt-4 text-sm opacity-90">
                 <p>Quantidade de ativos distintos na sua carteira.</p>
@@ -140,7 +140,8 @@
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
             Adicionar Nova Transação
         </a>
-        <a href="{{ url_for('transactions_list') }}" {# CORREÇÃO AQUI: url_for para transactions_list #}
+        {# Este botão agora aponta para a rota transactions_list, que você tem no app.py #}
+        <a href="{{ url_for('transactions_list') }}"
            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:-translate-y-1 hover:scale-105 flex items-center min-w-[220px] justify-center">
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
             Ver Todas as Transações
@@ -153,7 +154,7 @@
         <!-- Wrapper para rolagem vertical (~5-6 itens visíveis) -->
         <div class="overflow-y-auto max-h-[280px] border border-gray-200 rounded-lg"> {# Ajustado max-h aqui #}
             <div class="overflow-x-auto"> {# Permite rolagem horizontal APENAS dentro desta div se a tabela for muito larga #}
-                {% if posicoes %} {# CORREÇÃO AQUI: 'posicoes' em vez de 'posicoes_carteira' #}
+                {% if posicoes %} {# CORREÇÃO: Usando 'posicoes' #}
                 <!-- Adicionando table-fixed e otimizando larguras de coluna para evitar rolagem horizontal -->
                 <table class="min-w-full divide-y divide-gray-200 table-fixed">
                     <thead class="bg-gray-50 sticky top-0 z-10">
@@ -185,13 +186,13 @@
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
-                        {% for simbolo, dados in posicoes.items() %} {# CORREÇÃO AQUI: 'posicoes' em vez de 'posicoes_carteira' #}
+                        {% for simbolo, dados in posicoes.items() %} {# CORREÇÃO: Usando 'posicoes' #}
                         <tr>
                             <td class="px-4 py-2 text-sm font-medium text-gray-900 truncate"> {# truncate para evitar overflow de texto #}
-                                {{ REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo) }} ({{ simbolo }}) {# Usando REVERSE_SYMBOL_MAPPING para nome amigável #}
+                                {{ REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo) }} ({{ simbolo }}) {# Usando REVERSE_SYMBOL_MAPPING #}
                             </td>
                             <td class="px-4 py-2 text-sm text-gray-500">
-                                {{ dados.quantidade | floatformat(4) }} {# Usa 'quantidade' diretamente de 'dados' #}
+                                {{ dados.quantidade | floatformat(4) }}
                             </td>
                             <td class="px-4 py-2 text-sm text-gray-500">
                                 R$ {{ dados.preco_medio | floatformat(2) }}
@@ -211,14 +212,20 @@
                                 {% endif %}
                             </td>
                             <td class="px-4 py-2 text-sm {% if dados.lucro_prejuizo_nao_realizado is not none and dados.lucro_prejuizo_nao_realizado >= 0 %}text-green-600{% elif dados.lucro_prejuizo_nao_realizado is not none and dados.lucro_prejuizo_nao_realizado < 0 %}text-red-600{% else %}text-gray-500{% endif %}">
-                                {% if dados.lucro_prejuizo_nao_realizado is not none and dados.preco_medio * dados.quantidade > 0 %}
-                                    R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) }} ({{ ((dados.lucro_prejuizo_nao_realizado / (dados.preco_medio * dados.quantidade)) * 100) | default(0) | floatformat(2) }}%) {# CORREÇÃO AQUI: Divisão por zero #}
+                                {% if dados.lucro_prejuizo_nao_realizado is not none %}
+                                    R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) }} 
+                                    {# CORREÇÃO DE ZERO DIVISION ERROR AQUI #}
+                                    {% if dados.preco_medio is not none and dados.quantidade is not none and (dados.preco_medio * dados.quantidade) > 0 %}
+                                        ({{ ((dados.lucro_prejuizo_nao_realizado / (dados.preco_medio * dados.quantidade)) * 100) | floatformat(2) }}%)
+                                    {% else %}
+                                        (0.00%)
+                                    {% endif %}
                                 {% else %}
-                                    R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) if dados.lucro_prejuizo_nao_realizado is not none else 'N/A' }} (0.00%)
+                                    N/A
                                 {% endif %}
                             </td>
                             <td class="px-4 py-2 text-sm text-gray-500">
-                                R$ {{ dados.valor_atual | floatformat(2) }} {# Usa 'valor_atual' diretamente de 'dados' #}
+                                R$ {{ dados.valor_atual | floatformat(2) }}
                             </td>
                             <td class="px-4 py-2 text-right text-sm font-medium">
                                 <button type="button" 
@@ -237,19 +244,273 @@
     </div>
 
 
+    <!-- Filtros de Transações e Tabela de Transações -->
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+        <h2 class="text-2xl font-bold text-gray-800 mb-6">Histórico de Transações</h2>
+        {# A rota para o formulário de filtro deve ser a que exibe a tabela de transações, que é 'transactions_list' #}
+        <form method="GET" action="{{ url_for('transactions_list') }}" class="transaction-filter-form grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 items-end">
+            <div>
+                <label for="data_inicio" class="block text-sm font-medium text-gray-700">Data Início:</label>
+                <input type="date" id="data_inicio" name="data_inicio" value="{{ data_inicio | default('') }}"
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="data_fim" class="block text-sm font-medium text-gray-700">Data Fim:</label>
+                <input type="date" id="data_fim" name="data_fim" value="{{ data_fim | default('') }}"
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="simbolo_filtro" class="block text-sm font-medium text-gray-700">Símbolo/Nome:</label>
+                <input type="text" id="simbolo_filtro" name="simbolo_filtro" value="{{ simbolo_filtro | default('') }}"
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                       placeholder="Ex: PETR4, VALE3">
+            </div>
+            <div>
+                <label for="ordenar_por" class="block text-sm font-medium text-gray-700">Ordenar Por:</label>
+                <select id="ordenar_por" name="ordenar_por"
+                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                    <option value="data_transacao" {% if ordenar_por == 'data_transacao' %}selected{% endif %}>Data da Transação</option>
+                    <option value="simbolo_ativo" {% if ordenar_por == 'simbolo_ativo' %}selected{% endif %}>Símbolo Ativo</option>
+                    <option value="preco_unitario" {% if ordenar_por == 'preco_unitario' %}selected{% endif %}>Preço Unitário</option>
+                    <option value="quantidade" {% if ordenar_por == 'quantidade' %}selected{% endif %}>Quantidade</option>
+                    <option value="tipo_operacao" {% if ordenar_por == 'tipo_operacao' %}selected{% endif %}>Tipo de Operação</option>
+                </select>
+            </div>
+            <div>
+                <label for="ordem" class="block text-sm font-medium text-gray-700">Ordem:</label>
+                <select id="ordem" name="ordem"
+                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                    <option value="DESC" {% if ordem == 'DESC' %}selected{% endif %}>Descendente</option>
+                    <option value="ASC" {% if ordem == 'ASC' %}selected{% endif %}>Ascendente</option>
+                </select>
+            </div>
+            <div class="col-span-1 md:col-span-2 lg:col-span-4 flex justify-end space-x-2">
+                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
+                    Aplicar Filtros
+                </button>
+                {# Este botão de limpar filtros deve apontar para a rota transactions_list também #}
+                <a href="{{ url_for('transactions_list') }}" class="bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
+                    Limpar Filtros
+                </a>
+            </div>
+        </form>
+
+        <div class="overflow-x-auto">
+            {% if transacoes %}
+            <table class="min-w-full divide-y divide-gray-200 table-auto"> {# Mantém table-auto para esta tabela #}
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Data
+                        </th>
+                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Hora
+                        </th>
+                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Símbolo Ativo
+                        </th>
+                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Tipo de Operação
+                        </th>
+                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Preço Unitário
+                        </th>
+                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Quantidade
+                        </th>
+                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Custos/Taxas
+                        </th>
+                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Observações
+                        </th>
+                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Ações
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for transacao in transacoes %}
+                    <tr>
+                        <td class="px-4 py-2 text-sm text-gray-900">
+                            {{ transacao.data_transacao | datetimeformat }}
+                        </td>
+                        <td class="px-4 py-2 text-sm text-gray-500">
+                            {{ transacao.hora_transacao | datetimeformat('%H:%M') if transacao.hora_transacao else 'N/A' }}
+                        </td>
+                        <td class="px-4 py-2 text-sm text-gray-500">
+                            {{ REVERSE_SYMBOL_MAPPING.get(transacao.simbolo_ativo, transacao.simbolo_ativo) }} ({{ transacao.simbolo_ativo }})
+                        </td>
+                        <td class="px-4 py-2 text-sm {% if transacao.tipo_operacao == 'COMPRA' %}text-blue-600{% else %}text-red-600{% endif %} font-semibold">
+                            {{ transacao.tipo_operacao }}
+                        </td>
+                        <td class="px-4 py-2 text-sm text-gray-500">
+                            R$ {{ transacao.preco_unitario | floatformat(2) }}
+                        </td>
+                        <td class="px-4 py-2 text-sm text-gray-500">
+                            {{ transacao.quantidade | floatformat(2) }}
+                        </td>
+                        <td class="px-4 py-2 text-sm text-gray-500">
+                            R$ {{ transacao.custos_taxas | floatformat(2) }}
+                        </td>
+                        <td class="px-4 py-2 text-sm text-gray-500">
+                            {{ transacao.observacoes if transacao.observacoes else 'N/A' }}
+                        </td>
+                        <td class="px-4 py-2 text-left text-sm font-medium">
+                            <a href="{{ url_for('edit_transaction', transaction_id=transacao.id) }}" class="text-indigo-600 hover:text-indigo-900 mr-3">Editar</a> {# CORREÇÃO: id para transaction_id #}
+                            <form action="{{ url_for('delete_transaction', transaction_id=transacao.id) }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir esta transação?');"> {# CORREÇÃO: id para transaction_id, e rota para delete_transaction #}
+                                <button type="submit" class="text-red-600 hover:text-red-900">Excluir</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <!-- Paginação -->
+            {% if total_pages > 1 %}
+            <nav class="mt-4 flex justify-center" aria-label="Pagination">
+                <ul class="flex items-center -space-x-px">
+                    {% if page > 1 %}
+                    <li>
+                        <a href="{{ url_for('transactions_list', page=page-1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
+                           class="pagination-link py-2 px-3 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white rounded-l-lg">Anterior</a>
+                    </li>
+                    {% endif %}
+                    {% for p in range(1, total_pages + 1) %}
+                    <li>
+                        <a href="{{ url_for('transactions_list', page=p, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
+                           class="pagination-link py-2 px-3 leading-tight {% if p == page %}text-blue-600 bg-blue-50 border-blue-300{% else %}text-gray-500 bg-white border border-gray-300{% endif %} hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white">
+                            {{ p }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                    {% if page < total_pages %}
+                    <li>
+                        <a href="{{ url_for('transactions_list', page=page+1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
+                           class="pagination-link py-2 px-3 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white rounded-r-lg">Próxima</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+            {% else %}
+            <p class="text-center text-gray-500 py-4">Nenhuma transação encontrada com os filtros atuais.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Alertas de Preço -->
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+        <h2 class="text-2xl font-bold text-gray-800 mb-6">Meus Alertas de Preço</h2>
+        <form method="POST" action="{{ url_for('adicionar_alerta') }}" class="alert-form mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label for="alerta_simbolo" class="block text-sm font-medium text-gray-700">Símbolo Ativo:</label>
+                <input type="text" id="alerta_simbolo" name="simbolo_ativo" required
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                       placeholder="Ex: PETR4, VALE3">
+            </div>
+            <div>
+                <label for="preco_alvo" class="block text-sm font-medium text-gray-700">Preço Alvo:</label>
+                <input type="number" step="0.01" id="preco_alvo" name="preco_alvo" required
+                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                       placeholder="Ex: 35.00">
+            </div>
+            <div>
+                <label for="tipo_alerta" class="block text-sm font-medium text-gray-700">Tipo de Alerta:</label>
+                <select id="tipo_alerta" name="tipo_alerta" required
+                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                    <option value="ACIMA">Acima de</option>
+                    <option value="ABAIXO">Abaixo de</option>
+                </select>
+            </div>
+            <div class="md:col-span-3 flex justify-end">
+                <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
+                    Adicionar Alerta
+                </button>
+            </div>
+        </form>
+
+        <div class="overflow-x-auto">
+            {% if alertas %}
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Símbolo Ativo
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Preço Alvo
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Tipo
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Status
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Criado Em
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Disparado Em
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Ações
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for alerta in alertas %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {{ REVERSE_SYMBOL_MAPPING.get(alerta.simbolo_ativo, alerta.simbolo_ativo) }} ({{ alerta.simbolo_ativo }})
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            R$ {{ alerta.preco_alvo | floatformat(2) }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ alerta.tipo_alerta }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm 
+                            {% if alerta.status == 'ATIVO' %}text-green-600{% elif alerta.status == 'DISPARADO' %}text-orange-600{% else %}text-gray-500{% endif %} font-semibold">
+                            {{ alerta.status }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ alerta.data_criacao | datetimeformat('%Y-%m-%d %H:%M') }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ alerta.data_disparo | datetimeformat('%Y-%m-%d %H:%M') if alerta.data_disparo else 'N/A' }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-left text-sm font-medium">
+                            <form action="{{ url_for('excluir_alerta', alert_id=alerta.id) }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir este alerta?');"> {# CORREÇÃO: rota para excluir_alerta e parâmetro #}
+                                <input type="hidden" name="id" value="{{ alerta.id }}">
+                                <button type="submit" class="text-red-600 hover:text-red-900">Excluir</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-center text-gray-500 py-4">Nenhum alerta de preço configurado. Adicione um para ser notificado!</p>
+            {% endif %}
+        </div>
+    </div>
+    
     <!-- Seção de Notícias Financeiras -->
     <div class="bg-white rounded-lg shadow-lg p-6">
         <h2 class="text-2xl font-bold text-gray-800 mb-6">Notícias Financeiras Recentes</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {% if news_articles %} {# CORREÇÃO AQUI: 'news_articles' em vez de 'all_news' #}
-                {% for article in news_articles %} {# CORREÇÃO AQUI: 'article' em vez de 'news_item' #}
+            {% if news_articles %} {# CORREÇÃO: Usando 'news_articles' #}
+                {% for article in news_articles %} {# CORREÇÃO: Usando 'article' #}
                 <div class="bg-gray-50 rounded-lg p-4 shadow-sm flex flex-col justify-between transition-transform hover:scale-[1.02]">
                     <div>
                         <h3 class="font-semibold text-lg text-gray-900 mb-2 leading-tight">{{ article.title }}</h3>
                         {# Removida a linha de simbolo_display, pois não está vindo diretamente na NewsAPI #}
-                        <p class="text-sm text-gray-700 mb-3">{{ article.source }} - {{ article.publishedAt | datetimeformat('%d-%m-%Y %H:%M') }}</p> {# Usa 'publishedAt' e filtro #}
+                        <p class="text-sm text-gray-700 mb-3">{{ article.source }} - {{ article.publishedAt | datetimeformat('%d-%m-%Y %H:%M') }}</p> {# Usando 'publishedAt' e filtro #}
                     </div>
-                    <a href="{{ article.url }}" target="_blank" rel="noopener noreferrer" {# Usa 'article.url' #}
+                    <a href="{{ article.url }}" target="_blank" rel="noopener noreferrer" {# Usando 'article.url' #}
                        class="text-blue-600 hover:text-blue-800 text-sm font-medium mt-auto flex items-center">
                         Ler mais
                         <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
