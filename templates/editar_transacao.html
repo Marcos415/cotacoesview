@@ -30,12 +30,21 @@
         <div class="mb-4">
             <label for="simbolo_ativo" class="block text-gray-700 text-sm font-bold mb-2">Símbolo do Ativo:</label>
             <select name="simbolo_ativo" id="simbolo_ativo" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
-                {# Opção selecionada dinamicamente com base no valor atual da transação #}
-                <option value="{{ transaction.simbolo_ativo }}" selected>{{ transaction.simbolo_ativo_display }} ({{ transaction.simbolo_ativo }})</option>
-                {# Outras opções, garantindo que a opção atual não seja duplicada #}
+                {# Adiciona a opção da transação atual primeiro, para que seja sempre a primeira visível #}
+                {% if transaction.simbolo_ativo %}
+                    {% set current_display_name = REVERSE_SYMBOL_MAPPING.get(transaction.simbolo_ativo, transaction.simbolo_ativo) %}
+                    <option value="{{ transaction.simbolo_ativo }}" selected>
+                        {{ current_display_name }} ({{ transaction.simbolo_ativo }})
+                    </option>
+                {% else %}
+                    <option value="">Selecione um ativo</option>
+                {% endif %}
+
+                {# Itera sobre os outros símbolos disponíveis, excluindo o que já foi adicionado #}
                 {% for symbol_name in symbols %}
-                    {% if symbol_name != transaction.simbolo_ativo_display and SYMBOL_MAPPING.get(symbol_name) != transaction.simbolo_ativo %}
-                        <option value="{{ symbol_name }}">{{ symbol_name }} ({{ SYMBOL_MAPPING.get(symbol_name, symbol_name) }})</option>
+                    {% set ticker = SYMBOL_MAPPING.get(symbol_name, symbol_name) %}
+                    {% if ticker != transaction.simbolo_ativo %} {# Evita duplicar a opção se já foi adicionada acima #}
+                        <option value="{{ symbol_name }}">{{ symbol_name }} ({{ ticker }})</option>
                     {% endif %}
                 {% endfor %}
             </select>

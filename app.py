@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 from fpdf import FPDF
 
 import plotly.graph_objects as go
-import plotly.utils # <--- Mantenha esta importação
+import plotly.utils
 import json
 
 # Importa a biblioteca para carregar variáveis de ambiente do .env
@@ -1364,13 +1364,24 @@ def edit_transaction(transaction_id):
         flash('Transação não encontrada ou você não tem permissão para editá-la.', 'danger')
         return redirect(url_for('transactions_list'))
 
+    # DEBUG: Imprime o objeto transaction ANTES da formatação para ver o estado inicial
+    print(f"DEBUG: edit_transaction - Transaction object antes da formatação: {transaction}")
+
+
     if request.method == 'POST':
         data_transacao_str = request.form['data_transacao']
         try:
             data_transacao = datetime.datetime.strptime(data_transacao_str, '%Y-%m-%d').date()
         except ValueError:
             flash('Formato de data inválido. Use AAAA-MM-DD.', 'danger')
-            return render_template('editar_transacao.html', transaction=transaction, symbols=symbols)
+            # Garante que 'transaction' tem os valores formatados mesmo em caso de erro de validação
+            transaction['data_transacao_formatted'] = data_transacao_str
+            if request.form.get('hora_transacao'):
+                transaction['hora_transacao_formatted'] = request.form.get('hora_transacao')
+            else:
+                transaction['hora_transacao_formatted'] = None
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+            return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
         hora_transacao_str = request.form.get('hora_transacao')
         hora_transacao = None
@@ -1379,7 +1390,10 @@ def edit_transaction(transaction_id):
                 hora_transacao = datetime.datetime.strptime(hora_transacao_str, '%H:%M').time()
             except ValueError:
                 flash('Formato de hora inválido. Use HH:MM.', 'danger')
-                return render_template('editar_transacao.html', transaction=transaction, symbols=symbols)
+                transaction['data_transacao_formatted'] = data_transacao_str
+                transaction['hora_transacao_formatted'] = hora_transacao_str
+                transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+                return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
         simbolo_ativo = request.form['simbolo_ativo']
         quantidade = request.form['quantidade']
@@ -1394,11 +1408,26 @@ def edit_transaction(transaction_id):
             custos_taxas = decimal.Decimal(custos_taxas)
         except decimal.InvalidOperation:
             flash('Quantidade, Preço Unitário ou Custos/Taxas devem ser números válidos.', 'danger')
-            return render_template('editar_transacao.html', transaction=transaction, symbols=symbols)
+            transaction['data_transacao_formatted'] = data_transacao_str
+            transaction['hora_transacao_formatted'] = hora_transacao_str
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+            # Passa os valores do formulário para o template para preencher novamente
+            transaction['quantidade'] = quantidade
+            transaction['preco_unitario'] = preco_unitario
+            transaction['custos_taxas'] = custos_taxas
+            transaction['observacoes'] = observacoes
+            return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
         if quantidade <= 0 or preco_unitario <= 0:
             flash('Quantidade e Preço Unitário devem ser maiores que zero.', 'danger')
-            return render_template('editar_transacao.html', transaction=transaction, symbols=symbols)
+            transaction['data_transacao_formatted'] = data_transacao_str
+            transaction['hora_transacao_formatted'] = hora_transacao_str
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+            transaction['quantidade'] = quantidade
+            transaction['preco_unitario'] = preco_unitario
+            transaction['custos_taxas'] = custos_taxas
+            transaction['observacoes'] = observacoes
+            return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
         simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo.upper(), simbolo_ativo)
         if simbolo_ativo_yf == simbolo_ativo and \
@@ -1426,24 +1455,50 @@ def edit_transaction(transaction_id):
         except Exception as e:
             flash(f'Ocorreu um erro ao atualizar a transação. Erro: {e}', 'danger')
             print(f"Erro ao atualizar transação: {e}")
+            transaction['data_transacao_formatted'] = data_transacao_str
+            transaction['hora_transacao_formatted'] = hora_transacao_str
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+            transaction['quantidade'] = quantidade
+            transaction['preco_unitario'] = preco_unitario
+            transaction['custos_taxas'] = custos_taxas
+            transaction['observacoes'] = observacoes
+            return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
-    if transaction['data_transacao']:
+
+    # Esta parte do código é executada para GET requests (quando a página é carregada)
+    # ou se houve um POST com erro de validação que levou ao re-render.
+    if 'data_transacao' in transaction and transaction['data_transacao']:
         transaction['data_transacao_formatted'] = transaction['data_transacao'].strftime('%Y-%m-%d')
-    if transaction['hora_transacao']:
-        if isinstance(transaction['hora_transacao'], datetime.timedelta):
-            total_seconds = int(transaction['hora_transacao'].total_seconds())
-            hours, remainder = divmod(total_seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            transaction['hora_transacao_formatted'] = datetime.time(hours, minutes, seconds).strftime('%H:%M')
-        elif isinstance(transaction['hora_transacao'], datetime.time):
-            transaction['hora_transacao_formatted'] = transaction['hora_transacao'].strftime('%H:%M')
+    else:
+        transaction['data_transacao_formatted'] = None # Garante que a chave existe
+
+    if 'hora_transacao' in transaction and transaction['hora_transacao']:
+        # if isinstance(transaction['hora_transacao'], datetime.timedelta):
+        #     total_seconds = int(transaction['hora_transacao'].total_seconds())
+        #     hours, remainder = divmod(total_seconds, 3600)
+        #     minutes, seconds = divmod(remainder, 60)
+        #     transaction['hora_transacao_formatted'] = datetime.time(hours, minutes, seconds).strftime('%H:%M')
+        if isinstance(transaction['hora_transacao'], (datetime.time, datetime.timedelta)): # Updated to handle timedelta or time
+            # Convert timedelta to time object for consistent formatting
+            if isinstance(transaction['hora_transacao'], datetime.timedelta):
+                total_seconds = int(transaction['hora_transacao'].total_seconds())
+                hours, remainder = divmod(total_seconds, 3600)
+                minutes, _ = divmod(remainder, 60)
+                transaction['hora_transacao_formatted'] = f"{hours:02d}:{minutes:02d}"
+            else: # Already a datetime.time object
+                transaction['hora_transacao_formatted'] = transaction['hora_transacao'].strftime('%H:%M')
         else:
             transaction['hora_transacao_formatted'] = None
     else:
-        transaction['hora_transacao_formatted'] = None
+        transaction['hora_transacao_formatted'] = None # Garante que a chave existe
 
-    original_simbolo_ativo_display = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
-    transaction['simbolo_ativo_display'] = original_simbolo_display # Corrigido: Usar 'original_simbolo_ativo_display'
+    # Define simbolo_ativo_display para o template
+    transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+
+    print(f"DEBUG: edit_transaction - Transaction object antes de renderizar template: {transaction}")
+    print(f"DEBUG: Símbolo de exibição no template: {transaction.get('simbolo_ativo_display')}")
+    print(f"DEBUG: Símbolo YF no template: {transaction.get('simbolo_ativo')}")
+
 
     return render_template('editar_transacao.html',
                            user_name=user_name,
