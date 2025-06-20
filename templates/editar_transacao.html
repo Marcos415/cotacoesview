@@ -3,73 +3,69 @@
 {% block title %}Editar Transação{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <h1 class="text-3xl font-bold text-gray-900 mb-6 text-center">Editar Transação</h1>
-    <div class="bg-white p-6 rounded-lg shadow-md max-w-lg mx-auto">
-        <form action="{{ url_for('edit_transaction', id=transacao.id) }}" method="POST">
+<div class="container mx-auto p-4 max-w-lg bg-white shadow-md rounded-lg mt-8">
+    <h2 class="text-2xl font-bold mb-6 text-gray-800 text-center">Editar Transação</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
             <div class="mb-4">
-                <label for="simbolo_ativo" class="block text-gray-700 text-sm font-bold mb-2">Símbolo do Ativo:</label>
-                <!-- Usamos REVERSE_SYMBOL_MAPPING para exibir o nome popular, mas o valor do input é o símbolo real -->
-                <input type="text" id="simbolo_ativo" name="simbolo_ativo" 
-                       value="{{ REVERSE_SYMBOL_MAPPING.get(transacao.simbolo_ativo, transacao.simbolo_ativo) }}" 
-                       required
-                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                {% for category, message in messages %}
+                    <div class="p-3 rounded-md text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
             </div>
-            <div class="mb-4">
-                <label for="data_transacao" class="block text-gray-700 text-sm font-bold mb-2">Data da Transação:</label>
-                <input type="date" id="data_transacao" name="data_transacao" 
-                       value="{{ transacao.data_transacao | datetimeformat('%Y-%m-%d') }}" 
-                       required
-                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
-            </div>
-            <div class="mb-4">
-                <label for="hora_transacao" class="block text-gray-700 text-sm font-bold mb-2">Hora da Transação (Opcional):</label>
-                <input type="time" id="hora_transacao" name="hora_transacao" 
-                       value="{{ transacao.hora_transacao | datetimeformat('%H:%M') if transacao.hora_transacao else '' }}"
-                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
-            </div>
-            <div class="mb-4">
-                <label for="tipo_operacao" class="block text-gray-700 text-sm font-bold mb-2">Tipo de Operação:</label>
-                <select id="tipo_operacao" name="tipo_operacao" required
-                        class="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
-                    <option value="COMPRA" {% if transacao.tipo_operacao == 'COMPRA' %}selected{% endif %}>COMPRA</option>
-                    <option value="VENDA" {% if transacao.tipo_operacao == 'VENDA' %}selected{% endif %}>VENDA</option>
-                </select>
-            </div>
-            <div class="mb-4">
-                <label for="preco_unitario" class="block text-gray-700 text-sm font-bold mb-2">Preço Unitário:</label>
-                <input type="number" step="0.0001" id="preco_unitario" name="preco_unitario" 
-                       value="{{ transacao.preco_unitario | floatformat(4) }}" 
-                       required
-                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
-            </div>
-            <div class="mb-4">
-                <label for="quantidade" class="block text-gray-700 text-sm font-bold mb-2">Quantidade:</label>
-                <input type="number" step="0.0001" id="quantidade" name="quantidade" 
-                       value="{{ transacao.quantidade | floatformat(4) }}" 
-                       required
-                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
-            </div>
-            <div class="mb-4">
-                <label for="custos_taxas" class="block text-gray-700 text-sm font-bold mb-2">Custos/Taxas (Opcional):</label>
-                <input type="number" step="0.01" id="custos_taxas" name="custos_taxas" 
-                       value="{{ transacao.custos_taxas | floatformat(2) if transacao.custos_taxas is not none else '0.00' }}"
-                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
-            </div>
-            <div class="mb-6">
-                <label for="observacoes" class="block text-gray-700 text-sm font-bold mb-2">Observações (Opcional):</label>
-                <textarea id="observacoes" name="observacoes" rows="3"
-                          class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">{{ transacao.observacoes if transacao.observacoes else '' }}</textarea>
-            </div>
-            <div class="flex items-center justify-between">
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:shadow-outline transition-colors">
-                    Atualizar Transação
-                </button>
-                <a href="{{ url_for('index') }}" class="inline-block align-baseline font-bold text-sm text-gray-600 hover:text-gray-800 transition-colors">
-                    Cancelar
-                </a>
-            </div>
-        </form>
-    </div>
+        {% endif %}
+    {% endwith %}
+
+    <form action="{{ url_for('edit_transaction', transaction_id=transaction.id) }}" method="POST">
+        <div class="mb-4">
+            <label for="data_transacao" class="block text-gray-700 text-sm font-bold mb-2">Data da Transação:</label>
+            <input type="date" name="data_transacao" id="data_transacao" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" value="{{ transaction.data_transacao_formatted }}" required>
+        </div>
+        <div class="mb-4">
+            <label for="hora_transacao" class="block text-gray-700 text-sm font-bold mb-2">Hora da Transação (Opcional):</label>
+            <input type="time" name="hora_transacao" id="hora_transacao" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" value="{{ transaction.hora_transacao_formatted }}">
+        </div>
+        <div class="mb-4">
+            <label for="simbolo_ativo" class="block text-gray-700 text-sm font-bold mb-2">Símbolo do Ativo:</label>
+            <select name="simbolo_ativo" id="simbolo_ativo" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                {% for symbol_name in symbols %}
+                    <option value="{{ symbol_name }}" {% if transaction.simbolo_ativo_display == symbol_name %}selected{% endif %}>{{ symbol_name }} ({{ SYMBOL_MAPPING.get(symbol_name, symbol_name) }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="mb-4">
+            <label for="quantidade" class="block text-gray-700 text-sm font-bold mb-2">Quantidade:</label>
+            <input type="number" step="0.00000001" name="quantidade" id="quantidade" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" value="{{ transaction.quantidade|floatformat(8) }}" required>
+        </div>
+        <div class="mb-4">
+            <label for="preco_unitario" class="block text-gray-700 text-sm font-bold mb-2">Preço Unitário:</label>
+            <input type="number" step="0.01" name="preco_unitario" id="preco_unitario" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" value="{{ transaction.preco_unitario|floatformat(2) }}" required>
+        </div>
+        <div class="mb-4">
+            <label for="tipo_operacao" class="block text-gray-700 text-sm font-bold mb-2">Tipo de Operação:</label>
+            <select name="tipo_operacao" id="tipo_operacao" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                <option value="COMPRA" {% if transaction.tipo_operacao == 'COMPRA' %}selected{% endif %}>COMPRA</option>
+                <option value="VENDA" {% if transaction.tipo_operacao == 'VENDA' %}selected{% endif %}>VENDA</option>
+            </select>
+        </div>
+        <div class="mb-4">
+            <label for="custos_taxas" class="block text-gray-700 text-sm font-bold mb-2">Custos/Taxas (Opcional):</label>
+            <input type="number" step="0.01" name="custos_taxas" id="custos_taxas" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" value="{{ transaction.custos_taxas|floatformat(2) }}">
+        </div>
+        <div class="mb-6">
+            <label for="observacoes" class="block text-gray-700 text-sm font-bold mb-2">Observações (Opcional):</label>
+            <textarea name="observacoes" id="observacoes" rows="3" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">{{ transaction.observacoes }}</textarea>
+        </div>
+        <div class="flex items-center justify-between">
+            <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-200">
+                Atualizar Transação
+            </button>
+            <a href="{{ url_for('transactions_list') }}" class="inline-block align-baseline font-bold text-sm text-blue-500 hover:text-blue-800">
+                Cancelar
+            </a>
+        </div>
+    </form>
 </div>
 {% endblock %}

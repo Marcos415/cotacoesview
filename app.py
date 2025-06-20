@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup
 from fpdf import FPDF
 
 import plotly.graph_objects as go
+import plotly.utils # <--- ADICIONADO ESTA LINHA para resolver o NameError
 import json
 
 # Importa a biblioteca para carregar variáveis de ambiente do .env
@@ -410,14 +411,18 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
         with DBConnectionManager(dictionary=True) as cursor_db:
             final_simbolo_to_fetch_for_filter = None
 
+            # Ajuste aqui para pegar o símbolo mapeado se for do SYMBOL_MAPPING, senão usa o que veio
             if simbolo_filtro and simbolo_filtro.lower() != 'none':
+                # Primeiro tenta o mapeamento direto (nome amigável -> ticker YF)
                 final_simbolo_to_fetch_for_filter = SYMBOL_MAPPING.get(simbolo_filtro.upper(), simbolo_filtro)
+                
+                # Se não encontrou mapeamento direto E não parece ser um ticker YF padrão, tenta inferir .SA
                 if final_simbolo_to_fetch_for_filter == simbolo_filtro and \
                    not any(c in simbolo_filtro for c in ['^', '-', '=']) and \
                    not any(simbolo_filtro.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
                     if 4 <= len(simbolo_filtro) <= 6 and simbolo_filtro.isalnum():
                         final_simbolo_to_fetch_for_filter = f"{simbolo_filtro.upper()}.SA"
-
+            
             print(f"DEBUG FILTERS: Simbolo filtro final para busca: '{final_simbolo_to_fetch_for_filter}'")
 
             params = [user_id]
@@ -1164,13 +1169,61 @@ def add_transaction():
     if request.method == 'POST':
         print(f"DEBUG: add_transaction (POST) - request.form: {request.form}")
 
+        # --- Lógica para obter o símbolo ativo (AGORA COM ESCOLHA ENTRE SELECT E INPUT MANUAL) ---
+        simbolo_ativo_select_value = request.form.get('simbolo_ativo_select')
+        simbolo_ativo_manual_value = request.form.get('simbolo_ativo_manual')
+
+        simbolo_ativo = None
+        if simbolo_ativo_select_value and simbolo_ativo_select_value != 'OUTRO':
+            simbolo_ativo = simbolo_ativo_select_value
+        elif simbolo_ativo_manual_value:
+            simbolo_ativo = simbolo_ativo_manual_value.strip().upper() # Limpa e coloca em maiúsculas
+        else:
+            flash('Por favor, selecione ou digite um símbolo para o ativo.', 'danger')
+            return render_template('add_transaction.html', symbols=symbols,
+                                   data_transacao=request.form.get('data_transacao'),
+                                   hora_transacao=request.form.get('hora_transacao'),
+                                   quantidade=request.form.get('quantidade'),
+                                   preco_unitario=request.form.get('preco_unitario'),
+                                   tipo_operacao=request.form.get('tipo_operacao'),
+                                   custos_taxas=request.form.get('custos_taxas', '0.00'),
+                                   observacoes=request.form.get('observacoes'),
+                                   # Passar o simbolo_ativo_manual para manter o valor no campo
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value) # E o valor do select
+
+        if not simbolo_ativo: # Caso o campo manual também esteja vazio
+            flash('Símbolo do ativo não pode estar vazio.', 'danger')
+            return render_template('add_transaction.html', symbols=symbols,
+                                   data_transacao=request.form.get('data_transacao'),
+                                   hora_transacao=request.form.get('hora_transacao'),
+                                   quantidade=request.form.get('quantidade'),
+                                   preco_unitario=request.form.get('preco_unitario'),
+                                   tipo_operacao=request.form.get('tipo_operacao'),
+                                   custos_taxas=request.form.get('custos_taxas', '0.00'),
+                                   observacoes=request.form.get('observacoes'),
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value)
+        # --- Fim da Lógica para obter o símbolo ativo ---
+
+
         data_transacao_str = request.form['data_transacao']
         try:
             data_transacao = datetime.datetime.strptime(data_transacao_str, '%Y-%m-%d').date()
         except ValueError as e:
             flash(f'Formato de data inválido. Use AAAA-MM-DD. Erro: {e}', 'danger')
             print(f"ERRO: Data inválida: {e}")
-            return render_template('add_transaction.html', symbols=symbols)
+            return render_template('add_transaction.html', symbols=symbols,
+                                   data_transacao=data_transacao_str,
+                                   hora_transacao=request.form.get('hora_transacao'),
+                                   simbolo_ativo=simbolo_ativo, # Garante que o valor preenchido retorne
+                                   quantidade=request.form.get('quantidade'),
+                                   preco_unitario=request.form.get('preco_unitario'),
+                                   tipo_operacao=request.form.get('tipo_operacao'),
+                                   custos_taxas=request.form.get('custos_taxas', '0.00'),
+                                   observacoes=request.form.get('observacoes'),
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value)
 
         hora_transacao_str = request.form.get('hora_transacao')
         hora_transacao = None
@@ -1180,9 +1233,18 @@ def add_transaction():
             except ValueError as e:
                 flash(f'Formato de hora inválido. Use HH:MM. Erro: {e}', 'danger')
                 print(f"ERRO: Hora inválida: {e}")
-                return render_template('add_transaction.html', symbols=symbols)
+                return render_template('add_transaction.html', symbols=symbols,
+                                       data_transacao=data_transacao_str,
+                                       hora_transacao=hora_transacao_str,
+                                       simbolo_ativo=simbolo_ativo, # Garante que o valor preenchido retorne
+                                       quantidade=request.form.get('quantidade'),
+                                       preco_unitario=request.form.get('preco_unitario'),
+                                       tipo_operacao=request.form.get('tipo_operacao'),
+                                       custos_taxas=request.form.get('custos_taxas', '0.00'),
+                                       observacoes=request.form.get('observacoes'),
+                                       simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                       simbolo_ativo_select=simbolo_ativo_select_value)
 
-        simbolo_ativo = request.form['simbolo_ativo']
         quantidade_str = request.form['quantidade']
         preco_unitario_str = request.form['preco_unitario']
         tipo_operacao = request.form['tipo_operacao']
@@ -1196,23 +1258,54 @@ def add_transaction():
         except decimal.InvalidOperation as e:
             flash(f'Quantidade, Preço Unitário ou Custos/Taxas devem ser números válidos. Erro: {e}', 'danger')
             print(f"ERRO: Conversão decimal inválida: {e}")
-            return render_template('add_transaction.html', symbols=symbols)
+            return render_template('add_transaction.html', symbols=symbols,
+                                   data_transacao=data_transacao_str,
+                                   hora_transacao=hora_transacao_str,
+                                   simbolo_ativo=simbolo_ativo, # Garante que o valor preenchido retorne
+                                   quantidade=quantidade_str,
+                                   preco_unitario=preco_unitario_str,
+                                   tipo_operacao=tipo_operacao,
+                                   custos_taxas=custos_taxas_str,
+                                   observacoes=observacoes,
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value)
 
         if quantidade <= 0:
             flash('Quantidade deve ser maior que zero.', 'danger')
-            return render_template('add_transaction.html', symbols=symbols)
+            return render_template('add_transaction.html', symbols=symbols,
+                                   data_transacao=data_transacao_str,
+                                   hora_transacao=hora_transacao_str,
+                                   simbolo_ativo=simbolo_ativo, # Garante que o valor preenchido retorne
+                                   quantidade=quantidade_str,
+                                   preco_unitario=preco_unitario_str,
+                                   tipo_operacao=tipo_operacao,
+                                   custos_taxas=custos_taxas_str,
+                                   observacoes=observacoes,
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value)
         
         if preco_unitario <= 0:
             flash('Preço Unitário deve ser maior que zero.', 'danger')
-            return render_template('add_transaction.html', symbols=symbols)
+            return render_template('add_transaction.html', symbols=symbols,
+                                   data_transacao=data_transacao_str,
+                                   hora_transacao=hora_transacao_str,
+                                   simbolo_ativo=simbolo_ativo, # Garante que o valor preenchido retorne
+                                   quantidade=quantidade_str,
+                                   preco_unitario=preco_unitario_str,
+                                   tipo_operacao=tipo_operacao,
+                                   custos_taxas=custos_taxas_str,
+                                   observacoes=observacoes,
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value)
         
+        # Mapeamento do símbolo ativo para o formato YFinance para salvar no DB
         simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo.upper(), simbolo_ativo)
         if simbolo_ativo_yf == simbolo_ativo and \
            not any(c in simbolo_ativo for c in ['^', '-', '=']) and \
            not any(simbolo_ativo.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
             if 4 <= len(simbolo_ativo) <= 6 and simbolo_ativo.isalnum():
                 simbolo_ativo_yf = f"{simbolo_ativo.upper()}.SA"
-        simbolo_ativo_yf = simbolo_ativo_yf.upper()
+        simbolo_ativo_yf = simbolo_ativo_yf.upper() # Garante que o símbolo final esteja em maiúsculas
 
         try:
             with DBConnectionManager() as cursor_db:
@@ -1224,7 +1317,7 @@ def add_transaction():
                     user_id,
                     data_transacao,
                     hora_transacao,
-                    simbolo_ativo_yf,
+                    simbolo_ativo_yf, # Salva o símbolo padronizado ou o que o usuário digitou
                     quantidade,
                     preco_unitario,
                     tipo_operacao,
@@ -1245,7 +1338,9 @@ def add_transaction():
                                    preco_unitario=preco_unitario_str,
                                    tipo_operacao=tipo_operacao,
                                    custos_taxas=custos_taxas_str,
-                                   observacoes=observacoes)
+                                   observacoes=observacoes,
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value)
 
     return render_template('add_transaction.html', user_name=user_name, symbols=symbols)
 
