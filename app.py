@@ -79,13 +79,13 @@ def datetimeformat(value, format_string='%Y-%m-%d'):
         dt = value
     elif isinstance(value, datetime.date):
         dt = datetime.datetime(value.year, value.month, value.day)
-    elif value is None: # Adicionado para lidar com None
+    elif value is None:
         return 'N/A'
     else:
         try:
-            dt = datetime.datetime.fromisoformat(str(value).replace('Z', '+00:00')) # Para ISO 8601 com 'Z'
+            dt = datetime.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
         except ValueError:
-            return str(value) # Retorna o valor original como string se não puder ser formatado
+            return str(value)
     return dt.strftime(format_string)
 
 # --- Registro do filtro 'floatformat' para Jinja2 ---
@@ -95,12 +95,11 @@ def floatformat(value, precision=2):
     Formata um número float para uma determinada precisão de casas decimais.
     """
     try:
-        if value is None: # Lida com valores None
+        if value is None:
             return f"0.{'0' * precision}"
-        # Garante que o valor é um float antes de formatar
         return f"{float(value):.{precision}f}"
     except (ValueError, TypeError):
-        return value # Retorna o valor original se não puder ser convertido para float
+        return value
 
 # --- Configurações do Banco de Dados ---
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -388,9 +387,6 @@ def log_admin_action(admin_user_id, action_type, target_user_id=None, details=No
             INSERT INTO admin_audit_logs (admin_user_id, admin_username_at_action, action_type, target_user_id, target_username_at_action, details, timestamp)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
-            # CORREÇÃO AQUI: Se 'details' já for um dict, não precisa de json.dumps novamente.
-            # Convertemos para string APENAS se não for uma string (ou None).
-            # Para psycopg2 com RealDictCursor, ele pode já vir como dict.
             details_to_save = details
             if details is not None and not isinstance(details, str):
                 details_to_save = json.dumps(details)
@@ -472,7 +468,6 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
 
     except Exception as err:
         print(f"ERRO ao buscar transações: {err}")
-        # Retorna lista vazia e 0 para evitar que a página quebre
         return [], 0
     return transacoes, total_transacoes
 
@@ -636,7 +631,7 @@ def calcular_posicoes_carteira(user_id):
                             custo_medio_atual = estado_ativo[simbolo]['custo_acumulado'] / estado_ativo[simbolo]['quantidade']
                             custo_das_vendidas = quantidade * custo_medio_atual
 
-                            estado_ativo[simbolo]['quantidade'] -= quantidade
+                            estado_ativo[simbolo]['quantidade'] -= quantity
                             estado_ativo[simbolo]['custo_acumulado'] -= (custo_das_vendidas + custos_taxas)
 
                             if estado_ativo[simbolo]['quantidade'] <= 0.00001:
@@ -646,7 +641,7 @@ def calcular_posicoes_carteira(user_id):
                             estado_ativo[simbolo]['quantidade'] = 0.0
                             estado_ativo[simbolo]['custo_acumulado'] = 0.0
                     else:
-                        pass # Ignora vendas se não houver quantidade para vender
+                        pass
 
             for simbolo, dados_posicao in estado_ativo.items():
                 if dados_posicao['quantidade'] > 0:
@@ -659,7 +654,7 @@ def calcular_posicoes_carteira(user_id):
                     if preco_atual is not None:
                         lucro_prejuizo_nao_realizado_individual = (preco_atual - preco_medio) * float(dados_posicao['quantidade'])
                     else:
-                        lucro_prejuizo_nao_realizado_individual = 0.0 # Define como 0 se não houver preço atual
+                        lucro_prejuizo_nao_realizado_individual = 0.0
 
                     posicoes[simbolo] = {
                         'quantidade': dados_posicao['quantidade'],
@@ -727,6 +722,126 @@ def fetch_news(query):
         print(f"Erro ao decodificar JSON da API de notícias: {e}. Resposta: {response.text}")
         return []
 
+# --- NOVA FUNÇÃO: Criar tabelas se não existirem ---
+def create_tables_if_not_exist():
+    print("DEBUG: Verificando e criando tabelas se necessário...")
+    try:
+        with DBConnectionManager() as cursor_db:
+            # Tabela 'users'
+            if DB_TYPE == 'postgresql':
+                cursor_db.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id SERIAL PRIMARY KEY,
+                        username VARCHAR(80) UNIQUE NOT NULL,
+                        password_hash VARCHAR(255) NOT NULL,
+                        full_name VARCHAR(255) NOT NULL,
+                        email VARCHAR(255) UNIQUE NOT NULL,
+                        contact_number VARCHAR(20),
+                        is_admin BOOLEAN DEFAULT FALSE NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                cursor_db.execute("""
+                    CREATE TABLE IF NOT EXISTS transacoes (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        data_transacao DATE NOT NULL,
+                        hora_transacao TIME,
+                        simbolo_ativo VARCHAR(20) NOT NULL,
+                        quantidade DECIMAL(18, 8) NOT NULL,
+                        preco_unitario DECIMAL(18, 8) NOT NULL,
+                        tipo_operacao VARCHAR(10) NOT NULL,
+                        custos_taxas DECIMAL(10, 2) DEFAULT 0.00,
+                        observacoes TEXT,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    );
+                """)
+                cursor_db.execute("""
+                    CREATE TABLE IF NOT EXISTS alerts (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        simbolo_ativo VARCHAR(20) NOT NULL,
+                        preco_alvo DECIMAL(10, 2) NOT NULL,
+                        tipo_alerta VARCHAR(10) NOT NULL,
+                        status VARCHAR(20) DEFAULT 'ATIVO' NOT NULL,
+                        data_criacao TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        data_disparo TIMESTAMP WITH TIME ZONE,
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    );
+                """)
+                cursor_db.execute("""
+                    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+                        id SERIAL PRIMARY KEY,
+                        admin_user_id INTEGER NOT NULL,
+                        admin_username_at_action VARCHAR(80) NOT NULL,
+                        action_type VARCHAR(50) NOT NULL,
+                        target_user_id INTEGER,
+                        target_username_at_action VARCHAR(80),
+                        details JSONB, -- PostgreSQL uses JSONB for JSON data
+                        timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+            else: # MySQL
+                cursor_db.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        username VARCHAR(80) UNIQUE NOT NULL,
+                        password_hash VARCHAR(255) NOT NULL,
+                        full_name VARCHAR(255) NOT NULL,
+                        email VARCHAR(255) UNIQUE NOT NULL,
+                        contact_number VARCHAR(20),
+                        is_admin BOOLEAN DEFAULT FALSE NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                cursor_db.execute("""
+                    CREATE TABLE IF NOT EXISTS transacoes (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        user_id INT NOT NULL,
+                        data_transacao DATE NOT NULL,
+                        hora_transacao TIME,
+                        simbolo_ativo VARCHAR(20) NOT NULL,
+                        quantidade DECIMAL(18, 8) NOT NULL,
+                        preco_unitario DECIMAL(18, 8) NOT NULL,
+                        tipo_operacao VARCHAR(10) NOT NULL,
+                        custos_taxas DECIMAL(10, 2) DEFAULT 0.00,
+                        observacoes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    );
+                """)
+                cursor_db.execute("""
+                    CREATE TABLE IF NOT EXISTS alerts (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        user_id INT NOT NULL,
+                        simbolo_ativo VARCHAR(20) NOT NULL,
+                        preco_alvo DECIMAL(10, 2) NOT NULL,
+                        tipo_alerta VARCHAR(10) NOT NULL,
+                        status VARCHAR(20) DEFAULT 'ATIVO' NOT NULL,
+                        data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        data_disparo TIMESTAMP NULL,
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    );
+                """)
+                cursor_db.execute("""
+                    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        admin_user_id INT NOT NULL,
+                        admin_username_at_action VARCHAR(80) NOT NULL,
+                        action_type VARCHAR(50) NOT NULL,
+                        target_user_id INT,
+                        target_username_at_action VARCHAR(80),
+                        details JSON, -- MySQL uses JSON type
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+            print("DEBUG: Verificação e criação de tabelas concluída.")
+    except Exception as e:
+        print(f"ERRO: Falha ao verificar/criar tabelas: {e}")
+        # É CRÍTICO que a aplicação NÃO continue se as tabelas essenciais não puderem ser criadas
+        # ou haverá mais erros. Re-lança a exceção.
+        raise
 
 # --- ROTAS DA APLICAÇÃO ---
 
@@ -819,7 +934,7 @@ def index():
                            news_articles=news_articles,
                            pie_chart_json=pie_chart_json,
                            bar_chart_json=bar_chart_json,
-                           transacoes=transacoes, # Passa as transações
+                           transacoes=transacoes,
                            total_transacoes=total_transacoes,
                            data_inicio=data_inicio,
                            data_fim=data_fim,
@@ -828,7 +943,7 @@ def index():
                            simbolo_filtro=simbolo_filtro_raw,
                            page=page,
                            total_pages=total_pages,
-                           alertas=alertas) # Passa os alertas
+                           alertas=alertas)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -1002,11 +1117,15 @@ def add_transaction():
     symbols = sorted(list(SYMBOL_MAPPING.keys()))
 
     if request.method == 'POST':
+        # Logging dos dados do formulário para depuração
+        print(f"DEBUG: add_transaction (POST) - request.form: {request.form}")
+
         data_transacao_str = request.form['data_transacao']
         try:
             data_transacao = datetime.datetime.strptime(data_transacao_str, '%Y-%m-%d').date()
-        except ValueError:
-            flash('Formato de data inválido. Use AAAA-MM-DD.', 'danger')
+        except ValueError as e:
+            flash(f'Formato de data inválido. Use AAAA-MM-DD. Erro: {e}', 'danger')
+            print(f"ERRO: Data inválida: {e}")
             return render_template('add_transaction.html', symbols=symbols)
 
         hora_transacao_str = request.form.get('hora_transacao')
@@ -1014,8 +1133,9 @@ def add_transaction():
         if hora_transacao_str:
             try:
                 hora_transacao = datetime.datetime.strptime(hora_transacao_str, '%H:%M').time()
-            except ValueError:
-                flash('Formato de hora inválido. Use HH:MM.', 'danger')
+            except ValueError as e:
+                flash(f'Formato de hora inválido. Use HH:MM. Erro: {e}', 'danger')
+                print(f"ERRO: Hora inválida: {e}")
                 return render_template('add_transaction.html', symbols=symbols)
 
         simbolo_ativo = request.form['simbolo_ativo']
@@ -1029,12 +1149,17 @@ def add_transaction():
             quantidade = decimal.Decimal(quantidade_str)
             preco_unitario = decimal.Decimal(preco_unitario_str)
             custos_taxas = decimal.Decimal(custos_taxas_str)
-        except decimal.InvalidOperation:
-            flash('Quantidade, Preço Unitário ou Custos/Taxas devem ser números válidos.', 'danger')
+        except decimal.InvalidOperation as e:
+            flash(f'Quantidade, Preço Unitário ou Custos/Taxas devem ser números válidos. Erro: {e}', 'danger')
+            print(f"ERRO: Conversão decimal inválida: {e}")
             return render_template('add_transaction.html', symbols=symbols)
 
-        if quantidade <= 0 or preco_unitario <= 0:
-            flash('Quantidade e Preço Unitário devem ser maiores que zero.', 'danger')
+        if quantidade <= 0:
+            flash('Quantidade deve ser maior que zero.', 'danger')
+            return render_template('add_transaction.html', symbols=symbols)
+        
+        if preco_unitario <= 0:
+            flash('Preço Unitário deve ser maior que zero.', 'danger')
             return render_template('add_transaction.html', symbols=symbols)
         
         simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo.upper(), simbolo_ativo)
@@ -1064,10 +1189,19 @@ def add_transaction():
                     datetime.datetime.now()
                 ))
                 flash('Transação adicionada com sucesso!', 'success')
-                return redirect(url_for('index')) # Redireciona para o dashboard
+                return redirect(url_for('index'))
         except Exception as e:
-            flash(f'Ocorreu um erro ao adicionar a transação. Erro: {e}', 'danger')
-            print(f"Erro ao adicionar transação: {e}")
+            flash(f'Ocorreu um erro ao adicionar a transação. Verifique se todos os campos estão corretos. Erro: {e}', 'danger')
+            print(f"Erro ao adicionar transação no DB: {e}")
+            return render_template('add_transaction.html', symbols=symbols,
+                                   data_transacao=data_transacao_str,
+                                   hora_transacao=hora_transacao_str,
+                                   simbolo_ativo=simbolo_ativo,
+                                   quantidade=quantidade_str,
+                                   preco_unitario=preco_unitario_str,
+                                   tipo_operacao=tipo_operacao,
+                                   custos_taxas=custos_taxas_str,
+                                   observacoes=observacoes)
 
     return render_template('add_transaction.html', user_name=user_name, symbols=symbols)
 
@@ -1150,7 +1284,7 @@ def edit_transaction(transaction_id):
                     transaction_id, user_id
                 ))
                 flash('Transação atualizada com sucesso!', 'success')
-                return redirect(url_for('index')) # Redireciona para o dashboard
+                return redirect(url_for('index'))
         except Exception as e:
             flash(f'Ocorreu um erro ao atualizar a transação. Erro: {e}', 'danger')
             print(f"Erro ao atualizar transação: {e}")
@@ -1192,7 +1326,7 @@ def delete_transaction(transaction_id):
     except Exception as e:
         flash(f'Ocorreu um erro ao excluir a transação. Erro: {e}', 'danger')
         print(f"Erro ao excluir transação: {e}")
-    return redirect(url_for('index')) # Redireciona para o dashboard
+    return redirect(url_for('index'))
 
 @app.route('/admin/dashboard')
 @login_required
@@ -1294,7 +1428,6 @@ def admin_audit_logs():
             logs = cursor_db.fetchall()
             for log in logs:
                 if log['details']:
-                    # CORREÇÃO AQUI: Verifica se 'details' já é um dicionário antes de tentar carregar JSON
                     if isinstance(log['details'], dict):
                         log['details_parsed'] = log['details']
                     else:
@@ -1376,7 +1509,7 @@ def adicionar_alerta():
     user_id = session.get('user_id')
     simbolo_ativo = request.form['simbolo_ativo'].upper()
     preco_alvo_str = request.form['preco_alvo']
-    tipo_alerta = request.form['tipo_alerta'] # ACIMA ou ABAIXO
+    tipo_alerta = request.form['tipo_alerta']
 
     try:
         preco_alvo = decimal.Decimal(preco_alvo_str)
@@ -1387,7 +1520,6 @@ def adicionar_alerta():
         flash('Preço Alvo deve ser um número válido.', 'danger')
         return redirect(url_for('index'))
 
-    # Mapeia o símbolo do usuário para o ticker do YFinance
     simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo, simbolo_ativo)
     if simbolo_ativo_yf == simbolo_ativo and \
        not any(c in simbolo_ativo for c in ['^', '-', '=']) and \
@@ -1421,7 +1553,6 @@ def excluir_alerta():
 
     try:
         with DBConnectionManager() as cursor_db:
-            # Garante que o usuário só pode excluir seus próprios alertas
             cursor_db.execute("DELETE FROM alerts WHERE id = %s AND user_id = %s", (alert_id, user_id))
             if cursor_db.rowcount > 0:
                 flash('Alerta de preço excluído com sucesso.', 'success')
@@ -1436,7 +1567,6 @@ def excluir_alerta():
 @app.route('/get_historical_chart_data/<simbolo>')
 @login_required
 def get_historical_chart_data(simbolo):
-    # Usar o símbolo mapeado para buscar dados
     simbolo_yf = SYMBOL_MAPPING.get(simbolo.upper(), simbolo)
     if simbolo_yf == simbolo and \
        not any(c in simbolo for c in ['^', '-', '=']) and \
@@ -1444,7 +1574,7 @@ def get_historical_chart_data(simbolo):
         if 4 <= len(simbolo) <= 6 and simbolo.isalnum():
             simbolo_yf = f"{simbolo.upper()}.SA"
 
-    cache_key = (simbolo_yf, "1y", "1d") # Cache para dados de 1 ano, diário
+    cache_key = (simbolo_yf, "1y", "1d")
 
     if is_cache_fresh(historical_chart_cache, cache_key, HISTORICAL_CHART_CACHE_TTL):
         return jsonify(historical_chart_cache[cache_key]['data'])
@@ -1456,7 +1586,6 @@ def get_historical_chart_data(simbolo):
             print(f"DEBUG: Não foi possível obter dados históricos para {simbolo_yf}.")
             return jsonify({'error': 'Não foi possível obter dados históricos para este símbolo.'}), 404
 
-        # Criar o gráfico OHLC
         fig = go.Figure(data=[go.Candlestick(x=df_hist.index,
                         open=df_hist['Open'],
                         high=df_hist['High'],
@@ -1496,5 +1625,7 @@ def predict_price_api(simbolo):
         return jsonify({'error': 'Não foi possível obter previsão para este símbolo.', 'simbolo': simbolo}), 404
 
 if __name__ == '__main__':
+    # Chama a função para criar tabelas no início
+    create_tables_if_not_exist()
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=True, host='0.0.0.0', port=port)
