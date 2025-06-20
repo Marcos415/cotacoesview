@@ -678,7 +678,7 @@ def calcular_posicoes_carteira(user_id):
                             custo_medio_atual = estado_ativo[simbolo]['custo_acumulado'] / estado_ativo[simbolo]['quantidade']
                             custo_das_vendidas = quantidade * custo_medio_atual
 
-                            estado_ativo[simbolo]['quantidade'] -= quantidade
+                            estado_ativo[simbolo]['quantidade'] -= quantity
                             estado_ativo[simbolo]['custo_acumulado'] -= (custo_das_vendidas + custos_taxas)
 
                             if estado_ativo[simbolo]['quantidade'] <= 0.00001:
@@ -964,16 +964,38 @@ def login():
         username = request.form['username']
         password = request.form['password']
 
+        # --- NOVAS LINHAS DE DEBUG AQUI ---
+        print(f"DEBUG: ROTA /LOGIN (POST) - Tentativa de login para username: '{username}'")
+        print(f"DEBUG: ROTA /LOGIN (POST) - Senha recebida (parcial): '{password[:2]}*****'") # Não logue a senha completa!
+        # --- FIM DAS NOVAS LINHAS DE DEBUG ---
+
         user = get_user_by_username(username)
+
+        # --- NOVAS LINHAS DE DEBUG AQUI ---
+        if user:
+            print(f"DEBUG: ROTA /LOGIN (POST) - Usuário '{username}' encontrado no DB. ID: {user['id']}, É Admin: {user['is_admin']}")
+            print(f"DEBUG: ROTA /LOGIN (POST) - Hash da senha no DB: '{user['password_hash'][:5]}*****'")
+        else:
+            print(f"DEBUG: ROTA /LOGIN (POST) - Usuário '{username}' NÃO encontrado no DB.")
+        # --- FIM DAS NOVAS LINHAS DE DEBUG ---
+
+
         if user and check_password_hash(user['password_hash'], password):
             session['user_id'] = user['id']
             session['username'] = user['username']
             session['is_admin'] = bool(user['is_admin']) # Converte para booleano
+            
+            # --- NOVAS LINHAS DE DEBUG AQUI ---
+            print(f"DEBUG: ROTA /LOGIN (POST) - Login BEM-SUCEDIDO para '{username}'.")
+            # --- FIM DAS NOVAS LINHAS DE DEBUG ---
 
             flash('Login bem-sucedido!', 'success')
             next_page = request.args.get('next')
             return redirect(next_page or url_for('index'))
         else:
+            # --- NOVAS LINHAS DE DEBUG AQUI ---
+            print(f"DEBUG: ROTA /LOGIN (POST) - Login FALHOU para '{username}'. Credenciais inválidas ou senha não corresponde ao hash.")
+            # --- FIM DAS NOVAS LINHAS DE DEBUG ---
             flash('Nome de utilizador ou palavra-passe inválidos.', 'danger')
     return render_template('login.html')
 
