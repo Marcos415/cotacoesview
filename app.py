@@ -35,6 +35,8 @@ app.secret_key = os.getenv('SECRET_KEY')
 if not app.secret_key:
     # Levanta um erro se a chave secreta não for encontrada, o que indica um problema no .env
     raise ValueError("A variável de ambiente 'SECRET_KEY' não está definida. Por favor, defina-a no seu arquivo .env.")
+else:
+    print(f"DEBUG: SECRET_KEY carregada com sucesso (primeiros 5 caracteres): {app.secret_key[:5]}*****") # Linha de debug
 
 CORS(app)
 
@@ -126,6 +128,7 @@ else:
     }
     # Verifica se as variáveis de ambiente essenciais para o MySQL foram carregadas
     if not all([DB_CONFIG_MYSQL['user'], DB_CONFIG_MYSQL['password'], DB_CONFIG_MYSQL['database']]):
+        # Esta exceção só deve ocorrer em desenvolvimento local se o .env estiver mal configurado.
         raise ValueError("Uma ou mais variáveis de ambiente do banco de dados MySQL (DB_USER, DB_PASSWORD, DB_DATABASE) não estão definidas para uso local. Por favor, defina-as no seu arquivo .env.")
 
 # --- Context Manager para Conexões Unificado (MySQL ou PostgreSQL) ---
@@ -276,37 +279,37 @@ def admin_required(f):
 def get_user_by_id(user_id):
     try:
         # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             cursor_db.execute("SELECT id, username, full_name, email, contact_number, is_admin, created_at FROM users WHERE id = %s", (user_id,))
             user_data = cursor_db.fetchone()
             print(f"DEBUG: get_user_by_id({user_id}) - Dados do utilizador: {user_data}")
             return user_data
-    except Exception as err: # Captura exceções mais gerais agora
+    except Exception as err:
         print(f"Erro ao buscar utilizador por ID: {err}")
         return None
 
 def get_user_by_username(username):
     try:
         # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             cursor_db.execute("SELECT id, username, password_hash, full_name, email, contact_number, is_admin FROM users WHERE username = %s", (username,))
             user_data = cursor_db.fetchone()
             print(f"DEBUG: get_user_by_username({username}) - Dados do utilizador: {user_data}")
             return user_data
-    except Exception as err: # Captura exceções mais gerais agora
+    except Exception as err:
         print(f"Erro ao buscar utilizador por nome de utilizador: {err}")
         return None
 
 # Nova função para buscar utilizador por email
 def get_user_by_email(email):
     try:
-        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
             cursor_db.execute("SELECT id, username, full_name, email, contact_number, is_admin FROM users WHERE email = %s", (email,))
             user_data = cursor_db.fetchone()
             return user_data
-    except Exception as err: # Captura exceções mais gerais agora
+    except Exception as err:
         print(f"Erro ao buscar utilizador por email: {err}")
         return None
 
@@ -323,7 +326,7 @@ def get_all_users():
 
     try:
         # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             sql_query = "SELECT id, username, full_name, email, contact_number, is_admin, created_at FROM users"
             cursor_db.execute(sql_query)
@@ -335,7 +338,7 @@ def get_all_users():
 
             print(f"DEBUG: get_all_users() - Utilizadores após filtrar o admin logado: {users}")
 
-    except Exception as err: # Captura exceções mais gerais agora
+    except Exception as err:
         print(f"Erro ao buscar todos os utilizadores: {err}")
     return users
 
@@ -343,13 +346,13 @@ def get_admin_count():
     """Retorna o número total de utilizadores com is_admin = TRUE."""
     try:
         # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
             cursor_db.execute("SELECT COUNT(*) as admin_count FROM users WHERE is_admin = TRUE")
             result = cursor_db.fetchone()
             count = result['admin_count'] if result else 0
             print(f"DEBUG: get_admin_count() - Total de administradores: {count}")
             return count
-    except Exception as e: # Captura exceções mais gerais agora
+    except Exception as e:
         print(f"Erro ao contar administradores: {e}")
         return 0
 
@@ -357,12 +360,12 @@ def delete_user_from_db(user_id):
     """Exclui um utilizador do banco de dados e todas as suas transações/alertas."""
     print(f"DEBUG: Tentando excluir utilizador com ID: {user_id}")
     try:
-        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager() as cursor_db:
             cursor_db.execute("DELETE FROM users WHERE id = %s", (user_id,))
             rows_affected = cursor_db.rowcount
             print(f"DEBUG: delete_user_from_db - Linhas afetadas na tabela users: {rows_affected}")
             return rows_affected > 0
-    except Exception as err: # Captura exceções mais gerais agora
+    except Exception as err:
         print(f"Erro ao excluir utilizador: {err}")
         return False
 
@@ -371,12 +374,12 @@ def update_user_password(user_id, new_password):
     print(f"DEBUG: Tentando redefinir senha para utilizador com ID: {user_id}")
     try:
         hashed_password = generate_password_hash(new_password)
-        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager() as cursor_db:
             cursor_db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hashed_password, user_id))
             rows_affected = cursor_db.rowcount
             print(f"DEBUG: update_user_password - Linhas afetadas: {rows_affected}")
             return rows_affected > 0
-    except Exception as err: # Captura exceções mais gerais agora
+    except Exception as err:
         print(f"Erro ao atualizar palavra-passe: {err}")
         return False
 
@@ -387,13 +390,13 @@ def toggle_user_admin_status(user_id, new_status):
     """
     print(f"DEBUG: Tentando definir is_admin para utilizador {user_id} como {new_status}")
     try:
-        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager() as cursor_db:
             sql = "UPDATE users SET is_admin = %s WHERE id = %s"
             cursor_db.execute(sql, (new_status, user_id))
             rows_affected = cursor_db.rowcount
             print(f"DEBUG: toggle_user_admin_status - Linhas afetadas: {rows_affected}")
             return rows_affected > 0
-    except Exception as err: # Captura exceções mais gerais agora
+    except Exception as err:
         print(f"Erro ao alternar status de admin: {err}")
         return False
 
@@ -401,7 +404,7 @@ def toggle_user_admin_status(user_id, new_status):
 def update_user_profile_data(user_id, full_name, email, contact_number):
     """Atualiza o nome completo, email e número de contacto de um utilizador."""
     try:
-        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager() as cursor_db:
             sql = """
             UPDATE users
             SET full_name = %s, email = %s, contact_number = %s
@@ -411,7 +414,7 @@ def update_user_profile_data(user_id, full_name, email, contact_number):
             rows_affected = cursor_db.rowcount
             print(f"DEBUG: update_user_profile_data - Linhas afetadas: {rows_affected}")
             return rows_affected > 0
-    except Exception as e: # Captura exceções mais gerais agora
+    except Exception as e:
         print(f"Erro inesperado ao atualizar dados do perfil: {e}")
         return False
 
@@ -434,7 +437,7 @@ def log_admin_action(admin_user_id, action_type, target_user_id=None, details=No
             target_user_data = get_user_by_id(target_user_id)
             target_username = target_user_data['username'] if target_user_data else f"ID_Deletado_{target_user_id}"
 
-        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager() as cursor_db:
             sql = """
             INSERT INTO admin_audit_logs (admin_user_id, admin_username_at_action, action_type, target_user_id, target_username_at_action, details, timestamp)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -442,7 +445,7 @@ def log_admin_action(admin_user_id, action_type, target_user_id=None, details=No
             details_json = json.dumps(details) if details is not None else None
 
             cursor_db.execute(sql, (admin_user_id, admin_username, action_type, target_user_id, target_username, details_json, datetime.datetime.now()))
-    except Exception as err: # Captura exceções mais gerais agora
+    except Exception as err:
         print(f"ERRO ao registar ação de admin no log: {err}")
 
 
@@ -453,7 +456,7 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
     try:
         print(f"DEBUG FILTERS: user_id={user_id}, data_inicio={data_inicio}, data_fim={data_fim}, ordenar_por={ordenar_por}, ordem={ordem}, simbolo_filtro='{simbolo_filtro}' (raw)")
 
-        with DBConnectionManager(dictionary=True) as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager(dictionary=True) as cursor_db:
             final_simbolo_to_fetch_for_filter = None
 
             # CORREÇÃO AQUI: Verifica se o simbolo_filtro não é vazio E não é a string "None" (ignorando maiúsculas/minúsculas)
@@ -522,7 +525,7 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
                 elif transacao.get('hora_transacao') is None:
                     transacao['hora_transacao'] = None
 
-    except Exception as err: # Captura exceções mais gerais agora
+    except Exception as err:
         print(f"ERRO ao buscar transações: {err}")
         raise
     return transacoes, total_transacoes
@@ -635,7 +638,7 @@ def calcular_posicoes_carteira(user_id):
     total_prejuizo_nao_realizado = 0.0
 
     try:
-        with DBConnectionManager(dictionary=True) as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager(dictionary=True) as cursor_db:
             sql_transacoes = """
             SELECT
                 simbolo_ativo,
@@ -869,64 +872,80 @@ def index():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        confirm_password = request.form['confirm_password']
-        full_name = request.form['full_name']
-        email = request.form['email']
-        contact_number = request.form.get('contact_number') # Opcional
+        try: # Adicionado bloco try-except para capturar erros
+            username = request.form['username']
+            password = request.form['password']
+            confirm_password = request.form['confirm_password']
+            full_name = request.form['full_name']
+            email = request.form['email']
+            contact_number = request.form.get('contact_number') # Opcional
 
-        if not username or not password or not confirm_password or not full_name or not email:
-            flash('Por favor, preencha todos os campos obrigatórios.', 'danger')
-            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+            if not username or not password or not confirm_password or not full_name or not email:
+                flash('Por favor, preencha todos os campos obrigatórios.', 'danger')
+                return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
 
-        if password != confirm_password:
-            flash('As palavras-passe não coincidem.', 'danger')
-            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+            if password != confirm_password:
+                flash('As palavras-passe não coincidem.', 'danger')
+                return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
 
-        if len(password) < 6:
-            flash('A palavra-passe deve ter pelo menos 6 caracteres.', 'danger')
-            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+            if len(password) < 6:
+                flash('A palavra-passe deve ter pelo menos 6 caracteres.', 'danger')
+                return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
 
-        # Verificar se o username já existe
-        if get_user_by_username(username):
-            flash('Nome de utilizador já registado. Por favor, escolha outro.', 'danger')
-            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+            # Verificar se o username já existe
+            if get_user_by_username(username):
+                flash('Nome de utilizador já registado. Por favor, escolha outro.', 'danger')
+                return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
 
-        # Verificar se o email já existe
-        if get_user_by_email(email):
-            flash('Endereço de email já registado. Por favor, use outro ou faça login.', 'danger')
-            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+            # Verificar se o email já existe
+            if get_user_by_email(email):
+                flash('Endereço de email já registado. Por favor, use outro ou faça login.', 'danger')
+                return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
 
-        # Hash da senha
-        hashed_password = generate_password_hash(password)
+            # Hash da senha
+            hashed_password = generate_password_hash(password)
 
-        try:
-            with DBConnectionManager() as cursor_db: # ALTERADO AQUI
-                # Definir o primeiro utilizador como admin
-                is_admin = False
-                if get_admin_count() == 0:
-                    is_admin = True
+            # Definir o primeiro utilizador como admin
+            is_admin = False
+            if get_admin_count() == 0:
+                is_admin = True
 
-                sql = """
-                INSERT INTO users (username, password_hash, full_name, email, contact_number, is_admin, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """
-                cursor_db.execute(sql, (username, hashed_password, full_name, email, contact_number, is_admin, datetime.datetime.now()))
+            with DBConnectionManager() as cursor_db:
+                # Modificado para PostgreSQL para obter o ID inserido via RETURNING
+                if DB_TYPE == 'postgresql':
+                    sql = """
+                    INSERT INTO users (username, password_hash, full_name, email, contact_number, is_admin, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+                    """
+                    cursor_db.execute(sql, (username, hashed_password, full_name, email, contact_number, is_admin, datetime.datetime.now()))
+                    new_user_id = cursor_db.fetchone()[0] # Pega o ID retornado
+                else: # MySQL
+                    sql = """
+                    INSERT INTO users (username, password_hash, full_name, email, contact_number, is_admin, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """
+                    cursor_db.execute(sql, (username, hashed_password, full_name, email, contact_number, is_admin, datetime.datetime.now()))
+                    new_user_id = cursor_db.lastrowid # Pega o ID para MySQL
+
+
                 flash('Registo bem-sucedido! Pode agora fazer login.', 'success')
+
                 # Logar a criação do primeiro admin, se for o caso
                 if is_admin:
-                    # Para o primeiro admin, o admin_user_id ainda não existe na sessão, usamos 0 ou None para indicar sistema/primeiro user
-                    log_admin_action(admin_user_id=None, # Pode ser 0 ou None para o primeiro registo
-                                     action_type='PRIMEIRO_ADMIN_REGISTADO',
-                                     target_user_id=cursor_db.lastrowid, # Pega o ID do user recém-criado
-                                     details={'username': username, 'email': email})
+                    try:
+                        log_admin_action(admin_user_id=new_user_id, # Agora passamos o ID do novo usuário
+                                         action_type='PRIMEIRO_ADMIN_REGISTADO',
+                                         target_user_id=new_user_id,
+                                         details={'username': username, 'email': email})
+                    except Exception as log_e:
+                        print(f"ATENÇÃO: Erro ao logar ação de admin: {log_e}")
 
-                return redirect(url_for('login'))
+            return redirect(url_for('login'))
         except Exception as e: # Captura exceções mais gerais agora
-            flash(f'Ocorreu um erro ao registar. Tente novamente mais tarde. Erro: {e}', 'danger')
-            print(f"Erro ao registar utilizador: {e}")
-            return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
+            print(f"ERRO INESPERADO NA ROTA /REGISTER (POST): {e}") # Loga o erro real
+            # Adiciona o erro real à mensagem flash para depuração
+            flash(f'Ocorreu um erro ao registar. Por favor, tente novamente mais tarde. Detalhes técnicos: {e}', 'danger')
+            return render_template('register.html', username=request.form.get('username'), full_name=request.form.get('full_name'), email=request.form.get('email'), contact_number=request.form.get('contact_number'))
 
     return render_template('register.html')
 
@@ -1058,7 +1077,7 @@ def add_transaction():
         simbolo_ativo_yf = simbolo_ativo_yf.upper()
 
         try:
-            with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+            with DBConnectionManager() as cursor_db:
                 sql = """
                 INSERT INTO transacoes (user_id, data_transacao, hora_transacao, simbolo_ativo, quantidade, preco_unitario, tipo_operacao, custos_taxas, observacoes, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -1077,7 +1096,7 @@ def add_transaction():
                 ))
                 flash('Transação adicionada com sucesso!', 'success')
                 return redirect(url_for('transactions_list'))
-        except Exception as e: # Captura exceções mais gerais agora
+        except Exception as e:
             flash(f'Ocorreu um erro ao adicionar a transação. Erro: {e}', 'danger')
             print(f"Erro ao adicionar transação: {e}")
 
@@ -1093,10 +1112,10 @@ def edit_transaction(transaction_id):
     symbols = sorted(list(SYMBOL_MAPPING.keys())) # Lista de símbolos para o dropdown
 
     try:
-        with DBConnectionManager(dictionary=True) as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager(dictionary=True) as cursor_db:
             cursor_db.execute("SELECT * FROM transacoes WHERE id = %s AND user_id = %s", (transaction_id, user_id))
             transaction = cursor_db.fetchone()
-    except Exception as e: # Captura exceções mais gerais agora
+    except Exception as e:
         flash(f"Erro ao buscar transação para edição: {e}", "danger")
         return redirect(url_for('transactions_list'))
 
@@ -1152,7 +1171,7 @@ def edit_transaction(transaction_id):
         simbolo_ativo_yf = simbolo_ativo_yf.upper()
 
         try:
-            with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+            with DBConnectionManager() as cursor_db:
                 sql = """
                 UPDATE transacoes
                 SET data_transacao = %s, hora_transacao = %s, simbolo_ativo = %s, quantidade = %s,
@@ -1166,7 +1185,7 @@ def edit_transaction(transaction_id):
                 ))
                 flash('Transação atualizada com sucesso!', 'success')
                 return redirect(url_for('transactions_list'))
-        except Exception as e: # Captura exceções mais gerais agora
+        except Exception as e:
             flash(f'Ocorreu um erro ao atualizar a transação. Erro: {e}', 'danger')
             print(f"Erro ao atualizar transação: {e}")
 
@@ -1202,14 +1221,14 @@ def edit_transaction(transaction_id):
 def delete_transaction(transaction_id):
     user_id = session.get('user_id')
     try:
-        with DBConnectionManager() as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager() as cursor_db:
             # Verifique se a transação pertence ao utilizador logado antes de excluir
             cursor_db.execute("DELETE FROM transacoes WHERE id = %s AND user_id = %s", (transaction_id, user_id))
             if cursor_db.rowcount > 0:
                 flash('Transação excluída com sucesso.', 'success')
             else:
                 flash('Transação não encontrada ou você não tem permissão para excluí-la.', 'danger')
-    except Exception as e: # Captura exceções mais gerais agora
+    except Exception as e:
         flash(f'Ocorreu um erro ao excluir a transação. Erro: {e}', 'danger')
         print(f"Erro ao excluir transação: {e}")
     return redirect(url_for('transactions_list'))
@@ -1313,7 +1332,7 @@ def reset_password(user_id):
 def admin_audit_logs():
     logs = []
     try:
-        with DBConnectionManager(dictionary=True) as cursor_db: # ALTERADO AQUI
+        with DBConnectionManager(dictionary=True) as cursor_db:
             cursor_db.execute("SELECT * FROM admin_audit_logs ORDER BY timestamp DESC")
             logs = cursor_db.fetchall()
             # Tenta fazer o parse do JSON na coluna 'details'
@@ -1325,7 +1344,7 @@ def admin_audit_logs():
                         log['details_parsed'] = {'error': 'Invalid JSON'}
                 else:
                     log['details_parsed'] = {}
-    except Exception as e: # Captura exceções mais gerais agora
+    except Exception as e:
         flash(f"Erro ao carregar logs de auditoria: {e}", "danger")
         print(f"Erro ao carregar logs de auditoria: {e}")
     return render_template('admin_audit_logs.html', logs=logs)
