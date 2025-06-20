@@ -881,13 +881,16 @@ def register():
 
             username = request.form['username']
             password = request.form['password']
-            confirm_password = request.form['confirm_password']
+            # ALTERADO AQUI: Usar .get() para evitar KeyError se o campo estiver ausente
+            confirm_password = request.form.get('confirm_password') 
+            
             full_name = request.form['full_name']
             email = request.form['email']
             contact_number = request.form.get('contact_number') # Opcional
 
+            # Agora, a validação de `confirm_password` será alcançada
             if not username or not password or not confirm_password or not full_name or not email:
-                flash('Por favor, preencha todos os campos obrigatórios.', 'danger')
+                flash('Por favor, preencha todos os campos obrigatórios (incluindo a confirmação de palavra-passe).', 'danger')
                 return render_template('register.html', username=username, full_name=full_name, email=email, contact_number=contact_number)
 
             if password != confirm_password:
