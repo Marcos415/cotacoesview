@@ -631,7 +631,7 @@ def calcular_posicoes_carteira(user_id):
                             custo_medio_atual = estado_ativo[simbolo]['custo_acumulado'] / estado_ativo[simbolo]['quantidade']
                             custo_das_vendidas = quantidade * custo_medio_atual
 
-                            estado_ativo[simbolo]['quantidade'] -= quantity
+                            estado_ativo[simbolo]['quantidade'] -= quantidade # Corrigido de 'quantity' para 'quantidade'
                             estado_ativo[simbolo]['custo_acumulado'] -= (custo_das_vendidas + custos_taxas)
 
                             if estado_ativo[simbolo]['quantidade'] <= 0.00001:
@@ -729,6 +729,7 @@ def create_tables_if_not_exist():
         with DBConnectionManager() as cursor_db:
             # Tabela 'users'
             if DB_TYPE == 'postgresql':
+                print("Executando SQL: CREATE TABLE IF NOT EXISTS users (...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id SERIAL PRIMARY KEY,
@@ -741,6 +742,9 @@ def create_tables_if_not_exist():
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+                print("Comando SQL executado com sucesso.")
+
+                print("Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS transacoes (
                         id SERIAL PRIMARY KEY,
@@ -757,6 +761,9 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
+                print("Comando SQL executado com sucesso.")
+
+                print("Executando SQL: CREATE TABLE IF NOT EXISTS alerts (...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS alerts (
                         id SERIAL PRIMARY KEY,
@@ -770,6 +777,9 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
+                print("Comando SQL executado com sucesso.") # Confirma que Alerts foi adicionado
+
+                print("Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS admin_audit_logs (
                         id SERIAL PRIMARY KEY,
@@ -778,11 +788,13 @@ def create_tables_if_not_exist():
                         action_type VARCHAR(50) NOT NULL,
                         target_user_id INTEGER,
                         target_username_at_action VARCHAR(80),
-                        details JSONB, -- PostgreSQL uses JSONB for JSON data
+                        details JSONB,
                         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+                print("Comando SQL executado com sucesso.")
             else: # MySQL
+                print("Executando SQL: CREATE TABLE IF NOT EXISTS users (...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -795,6 +807,9 @@ def create_tables_if_not_exist():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+                print("Comando SQL executado com sucesso.")
+
+                print("Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS transacoes (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -811,6 +826,9 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
+                print("Comando SQL executado com sucesso.")
+
+                print("Executando SQL: CREATE TABLE IF NOT EXISTS alerts (...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS alerts (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -824,6 +842,9 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
+                print("Comando SQL executado com sucesso.") # Confirma que Alerts foi adicionado
+
+                print("Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS admin_audit_logs (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -832,15 +853,14 @@ def create_tables_if_not_exist():
                         action_type VARCHAR(50) NOT NULL,
                         target_user_id INT,
                         target_username_at_action VARCHAR(80),
-                        details JSON, -- MySQL uses JSON type
+                        details JSON,
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+                print("Comando SQL executado com sucesso.")
             print("DEBUG: Verificação e criação de tabelas concluída.")
     except Exception as e:
         print(f"ERRO: Falha ao verificar/criar tabelas: {e}")
-        # É CRÍTICO que a aplicação NÃO continue se as tabelas essenciais não puderem ser criadas
-        # ou haverá mais erros. Re-lança a exceção.
         raise
 
 # --- ROTAS DA APLICAÇÃO ---
@@ -1116,8 +1136,9 @@ def add_transaction():
     user_name = session.get('username')
     symbols = sorted(list(SYMBOL_MAPPING.keys()))
 
+    print(f"DEBUG: add_transaction (GET/POST) - Symbols carregados para o template: {symbols}")
+
     if request.method == 'POST':
-        # Logging dos dados do formulário para depuração
         print(f"DEBUG: add_transaction (POST) - request.form: {request.form}")
 
         data_transacao_str = request.form['data_transacao']
@@ -1162,6 +1183,7 @@ def add_transaction():
             flash('Preço Unitário deve ser maior que zero.', 'danger')
             return render_template('add_transaction.html', symbols=symbols)
         
+        # Garante que o símbolo_ativo_yf seja um dos símbolos do SYMBOL_MAPPING ou o próprio símbolo UPPERCASE
         simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo.upper(), simbolo_ativo)
         if simbolo_ativo_yf == simbolo_ativo and \
            not any(c in simbolo_ativo for c in ['^', '-', '=']) and \

@@ -1,137 +1,170 @@
-<!DOCTYPE html>
-<html lang="pt">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel de Administração</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f3f4f6;
-        }
-        .table-scroll-container {
-            max-height: 500px; /* Adjust height as needed */
-            overflow-y: auto;
-            border: 1px solid #e2e8f0;
-            border-radius: 0.5rem;
-        }
-        .table-scroll-container table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .table-scroll-container th, .table-scroll-container td {
-            padding: 12px 16px;
-            text-align: left;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        .table-scroll-container thead th {
-            background-color: #f8fafc;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-        .table-scroll-container tbody tr:last-child td {
-            border-bottom: none;
-        }
-    </style>
-</head>
-<body class="bg-gray-100 min-h-screen">
-    <!-- Cabeçalho Principal (Reutilizado do index.html para consistência) -->
-    <header class="bg-gradient-to-r from-blue-700 to-indigo-800 text-white p-4 flex justify-between items-center rounded-b-lg shadow-xl">
-        <h1 class="text-3xl font-extrabold flex items-center">
-            <svg class="w-8 h-8 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path>
-            </svg>
-            Gestor de Investimentos - Painel Admin
-        </h1>
-        <div class="flex items-center space-x-4">
-            <a href="{{ url_for('admin_audit_logs_view') }}" class="bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-full shadow-md hover:shadow-lg transition duration-300">Logs de Auditoria</a>
-            <a href="{{ url_for('index') }}" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full shadow-md hover:shadow-lg transition duration-300">Voltar ao Painel</a>
-            <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-full shadow-md hover:shadow-lg transition duration-300">Sair</a>
-        </div>
-    </header>
+{% extends 'base.html' %}
 
-    <main class="container mx-auto p-4 max-w-7xl">
-        <!-- Mensagens Flash -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                <div class="mb-6 space-y-3">
-                    {% for category, message in messages %}
-                        <div class="p-4 rounded-lg text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% elif category == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-blue-100 text-blue-800{% endif %} shadow-md">
-                            {{ message }}
-                        </div>
+{% block title %}Painel de Administração{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-4xl font-bold text-gray-900 mb-8 text-center">Painel de Administração</h1>
+
+    <!-- Mensagens Flash -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="mb-6 space-y-3">
+                {% for category, message in messages %}
+                    <div class="p-4 rounded-lg text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% elif category == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-blue-100 text-blue-800{% endif %} shadow-md">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="mb-8 flex flex-wrap justify-center gap-4">
+        <a href="{{ url_for('admin_audit_logs') }}" class="bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-full shadow-md hover:shadow-lg transition duration-300">
+            Logs de Auditoria
+        </a>
+    </div>
+
+    <h2 class="text-2xl font-bold text-gray-800 mb-6">Gestão de Utilizadores (Total de Admins: {{ admin_count }})</h2>
+
+    {% if users %}
+        <div class="overflow-x-auto bg-white rounded-lg shadow-md">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ID
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Nome de Utilizador
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Nome Completo
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Email
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Nº de Contacto
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            É Admin?
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Criado Em
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Ações
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for user in users %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ user.id }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ user.username }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ user.full_name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ user.email }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ user.contact_number if user.contact_number else 'N/A' }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm {% if user.is_admin %}text-green-600 font-semibold{% else %}text-gray-500{% endif %}">
+                            {{ 'Sim' if user.is_admin else 'Não' }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {{ user.created_at | datetimeformat('%Y-%m-%d %H:%M') }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-left text-sm font-medium flex space-x-2">
+                            {% if user.id != session['user_id'] %}
+                                <form action="{{ url_for('toggle_admin', user_id=user.id) }}" method="POST" class="inline">
+                                    <button type="submit" class="
+                                        {% if user.is_admin %}
+                                            bg-yellow-500 hover:bg-yellow-600
+                                        {% else %}
+                                            bg-green-500 hover:bg-green-600
+                                        {% endif %}
+                                        text-white py-1 px-3 rounded-md text-xs transition-colors">
+                                        {{ 'Remover Admin' if user.is_admin else 'Tornar Admin' }}
+                                    </button>
+                                </form>
+                                <form action="{{ url_for('delete_user', user_id=user.id) }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir o usuário {{ user.username }} e TODAS as suas transações? Esta ação é irreversível.');">
+                                    <button type="submit" class="bg-red-500 hover:bg-red-600 text-white py-1 px-3 rounded-md text-xs transition-colors">
+                                        Excluir
+                                    </button>
+                                </form>
+                                <!-- Botão de Redefinir Senha -->
+                                <button type="button" 
+                                        onclick="openResetPasswordModal({{ user.id }}, '{{ user.username }}')"
+                                        class="bg-purple-500 hover:bg-purple-600 text-white py-1 px-3 rounded-md text-xs transition-colors">
+                                    Redefinir Senha
+                                </button>
+                            {% else %}
+                                <span class="text-gray-400 text-xs">Sua conta</span>
+                            {% endif %}
+                        </td>
+                    </tr>
                     {% endfor %}
-                </div>
-            {% endif %}
-        {% endwith %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="text-center text-gray-600 py-4">Nenhum outro usuário encontrado no sistema.</p>
+    {% endif %}
+</div>
 
-        <section class="bg-white p-6 rounded-lg shadow-xl mb-8">
-            <h2 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-3 border-gray-200">Gerenciar Utilizadores</h2>
-            
-            {% if users %}
-                <div class="table-scroll-container">
-                    <table class="min-w-full bg-white">
-                        <thead>
-                            <tr>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">ID</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Username</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Admin?</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Criado Em</th>
-                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for user in users %}
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ user.id }}</td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ user.username }}</td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {% if user.is_admin %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
-                                        {{ 'Sim' if user.is_admin else 'Não' }}
-                                    </span>
-                                </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ user.created_at|datetimeformat('%Y-%m-%d %H:%M') }}</td>
-                                <td class="px-4 py-3 whitespace-nowrap text-center text-sm font-medium flex items-center justify-center space-x-2">
-                                    <!-- Formulário para Excluir Utilizador -->
-                                    <form action="{{ url_for('admin_delete_user', user_id=user.id) }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja EXCLUIR o utilizador {{ user.username }}? Esta ação é irreversível e excluirá TODAS as transações e alertas dele!');">
-                                        <button type="submit" class="text-red-600 hover:text-red-900 px-3 py-1 rounded-md border border-red-200 bg-red-50 hover:bg-red-100">Excluir</button>
-                                    </form>
-                                    
-                                    <!-- Formulário para Redefinir Palavra-passe -->
-                                    <form action="{{ url_for('admin_reset_password', user_id=user.id) }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja REDEFINIR a palavra-passe do utilizador {{ user.username }}?');">
-                                        <input type="password" name="new_password" placeholder="Nova Senha" required class="w-32 px-2 py-1 border rounded-md text-sm">
-                                        <button type="submit" class="text-indigo-600 hover:text-indigo-900 px-3 py-1 rounded-md border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 ml-2">Redefinir Senha</button>
-                                    </form>
+<!-- Modal para Redefinir Senha -->
+<div id="resetPasswordModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+        <h3 class="text-xl font-bold text-gray-800 mb-4">Redefinir Senha para <span id="resetUserUsername" class="text-blue-600"></span></h3>
+        <button id="closeResetPasswordModal" class="absolute top-3 right-5 text-gray-500 hover:text-gray-800 text-2xl font-bold">&times;</button>
+        
+        <form id="resetPasswordForm" method="POST" class="space-y-4">
+            <input type="hidden" id="resetUserId" name="user_id">
+            <div>
+                <label for="new_password" class="block text-sm font-medium text-gray-700">Nova Senha</label>
+                <input type="password" id="new_password" name="new_password" required minlength="6"
+                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
+                Redefinir Senha
+            </button>
+        </form>
+    </div>
+</div>
 
-                                    <!-- Formulário para Alternar Status de Administrador -->
-                                    <form action="{{ url_for('admin_toggle_admin', user_id=user.id) }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja ALTERAR o status de administrador de {{ user.username }}?');">
-                                        <button type="submit" 
-                                                class="px-3 py-1 rounded-md text-sm leading-4 font-medium transition duration-150 ease-in-out 
-                                                {% if user.is_admin %}
-                                                bg-orange-100 text-orange-800 hover:bg-orange-200 border border-orange-200
-                                                {% else %}
-                                                bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-200
-                                                {% endif %}">
-                                            {{ 'Remover Admin' if user.is_admin else 'Tornar Admin' }}
-                                        </button>
-                                    </form>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <p class="text-center text-gray-600 py-8 text-lg bg-blue-50 rounded-lg">Nenhum utilizador encontrado (ou você é o único administrador).</p>
-            {% endif %}
-        </section>
-    </main>
+{% endblock %}
 
-    <footer class="bg-gray-800 text-white text-center p-4 mt-8 rounded-t-lg shadow-xl">
-        <p>&copy; 2025 Gestor de Investimentos. Todos os direitos reservados.</p>
-    </footer>
-</body>
-</html>
+{% block scripts_extra %}
+<script>
+    const resetPasswordModal = document.getElementById('resetPasswordModal');
+    const closeResetPasswordModalBtn = document.getElementById('closeResetPasswordModal');
+    const resetUserIdInput = document.getElementById('resetUserId');
+    const resetUserUsernameSpan = document.getElementById('resetUserUsername');
+    const resetPasswordForm = document.getElementById('resetPasswordForm');
 
+    function openResetPasswordModal(userId, username) {
+        resetUserIdInput.value = userId;
+        resetUserUsernameSpan.textContent = username;
+        resetPasswordForm.action = "{{ url_for('reset_password', user_id=12345) }}".replace('12345', userId);
+        resetPasswordModal.classList.remove('hidden');
+    }
+
+    closeResetPasswordModalBtn.addEventListener('click', function() {
+        resetPasswordModal.classList.add('hidden');
+    });
+
+    // Fechar modal ao clicar fora
+    resetPasswordModal.addEventListener('click', function(event) {
+        if (event.target === resetPasswordModal) {
+            resetPasswordModal.classList.add('hidden');
+        }
+    });
+
+    // Adicione validação básica ao formulário de redefinição de senha antes de enviar
+    resetPasswordForm.addEventListener('submit', function(event) {
+        const newPassword = document.getElementById('new_password').value;
+        if (newPassword.length < 6) {
+            alert('A nova senha deve ter pelo menos 6 caracteres.');
+            event.preventDefault(); // Impede o envio do formulário
+        }
+    });
+</script>
+{% endblock %}
