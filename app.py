@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 from fpdf import FPDF
 
 import plotly.graph_objects as go
-import plotly.utils # <--- ADICIONADO ESTA LINHA para resolver o NameError
+import plotly.utils # <--- Mantenha esta importação
 import json
 
 # Importa a biblioteca para carregar variáveis de ambiente do .env
@@ -1169,17 +1169,20 @@ def add_transaction():
     if request.method == 'POST':
         print(f"DEBUG: add_transaction (POST) - request.form: {request.form}")
 
-        # --- Lógica para obter o símbolo ativo (AGORA COM ESCOLHA ENTRE SELECT E INPUT MANUAL) ---
-        simbolo_ativo_select_value = request.form.get('simbolo_ativo_select')
-        simbolo_ativo_manual_value = request.form.get('simbolo_ativo_manual')
+        # --- Lógica para obter o símbolo ativo (Simplificada) ---
+        simbolo_ativo = request.form.get('simbolo_ativo') # Este campo agora virá do select ou do input manual
+        simbolo_ativo_select_value = request.form.get('simbolo_ativo_select_hidden') # Valor do select, se não for OUTRO
+        simbolo_ativo_manual_value = request.form.get('simbolo_ativo_manual_hidden') # Valor do input manual, se OUTRO
 
-        simbolo_ativo = None
-        if simbolo_ativo_select_value and simbolo_ativo_select_value != 'OUTRO':
-            simbolo_ativo = simbolo_ativo_select_value
-        elif simbolo_ativo_manual_value:
-            simbolo_ativo = simbolo_ativo_manual_value.strip().upper() # Limpa e coloca em maiúsculas
-        else:
+        # DEBUG: Adiciona logs para ver o que realmente está sendo recebido
+        print(f"DEBUG: Simbolo ativo recebido (geral): '{simbolo_ativo}'")
+        print(f"DEBUG: Simbolo ativo recebido (select hidden): '{simbolo_ativo_select_value}'")
+        print(f"DEBUG: Simbolo ativo recebido (manual hidden): '{simbolo_ativo_manual_value}'")
+
+
+        if not simbolo_ativo or simbolo_ativo.strip() == '':
             flash('Por favor, selecione ou digite um símbolo para o ativo.', 'danger')
+            # Passa os valores de volta para o template para que os campos selem preenchidos
             return render_template('add_transaction.html', symbols=symbols,
                                    data_transacao=request.form.get('data_transacao'),
                                    hora_transacao=request.form.get('hora_transacao'),
@@ -1188,23 +1191,13 @@ def add_transaction():
                                    tipo_operacao=request.form.get('tipo_operacao'),
                                    custos_taxas=request.form.get('custos_taxas', '0.00'),
                                    observacoes=request.form.get('observacoes'),
-                                   # Passar o simbolo_ativo_manual para manter o valor no campo
+                                   # Passa o simbolo_ativo_manual para manter o valor no campo
                                    simbolo_ativo_manual=simbolo_ativo_manual_value,
                                    simbolo_ativo_select=simbolo_ativo_select_value) # E o valor do select
 
-        if not simbolo_ativo: # Caso o campo manual também esteja vazio
-            flash('Símbolo do ativo não pode estar vazio.', 'danger')
-            return render_template('add_transaction.html', symbols=symbols,
-                                   data_transacao=request.form.get('data_transacao'),
-                                   hora_transacao=request.form.get('hora_transacao'),
-                                   quantidade=request.form.get('quantidade'),
-                                   preco_unitario=request.form.get('preco_unitario'),
-                                   tipo_operacao=request.form.get('tipo_operacao'),
-                                   custos_taxas=request.form.get('custos_taxas', '0.00'),
-                                   observacoes=request.form.get('observacoes'),
-                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
-                                   simbolo_ativo_select=simbolo_ativo_select_value)
-        # --- Fim da Lógica para obter o símbolo ativo ---
+        # Se o simbolo_ativo veio do campo manual (selecionou "OUTRO"), usamos ele.
+        # Caso contrário (select normal ou já um ticker YF), usamos o que veio direto.
+        final_simbolo_para_processamento = simbolo_ativo.strip().upper()
 
 
         data_transacao_str = request.form['data_transacao']
@@ -1216,14 +1209,13 @@ def add_transaction():
             return render_template('add_transaction.html', symbols=symbols,
                                    data_transacao=data_transacao_str,
                                    hora_transacao=request.form.get('hora_transacao'),
-                                   simbolo_ativo=simbolo_ativo, # Garante que o valor preenchido retorne
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value,
                                    quantidade=request.form.get('quantidade'),
                                    preco_unitario=request.form.get('preco_unitario'),
                                    tipo_operacao=request.form.get('tipo_operacao'),
                                    custos_taxas=request.form.get('custos_taxas', '0.00'),
-                                   observacoes=request.form.get('observacoes'),
-                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
-                                   simbolo_ativo_select=simbolo_ativo_select_value)
+                                   observacoes=request.form.get('observacoes'))
 
         hora_transacao_str = request.form.get('hora_transacao')
         hora_transacao = None
@@ -1236,14 +1228,13 @@ def add_transaction():
                 return render_template('add_transaction.html', symbols=symbols,
                                        data_transacao=data_transacao_str,
                                        hora_transacao=hora_transacao_str,
-                                       simbolo_ativo=simbolo_ativo, # Garante que o valor preenchido retorne
+                                       simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                       simbolo_ativo_select=simbolo_ativo_select_value,
                                        quantidade=request.form.get('quantidade'),
                                        preco_unitario=request.form.get('preco_unitario'),
                                        tipo_operacao=request.form.get('tipo_operacao'),
                                        custos_taxas=request.form.get('custos_taxas', '0.00'),
-                                       observacoes=request.form.get('observacoes'),
-                                       simbolo_ativo_manual=simbolo_ativo_manual_value,
-                                       simbolo_ativo_select=simbolo_ativo_select_value)
+                                       observacoes=request.form.get('observacoes'))
 
         quantidade_str = request.form['quantidade']
         preco_unitario_str = request.form['preco_unitario']
@@ -1261,51 +1252,51 @@ def add_transaction():
             return render_template('add_transaction.html', symbols=symbols,
                                    data_transacao=data_transacao_str,
                                    hora_transacao=hora_transacao_str,
-                                   simbolo_ativo=simbolo_ativo, # Garante que o valor preenchido retorne
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value,
                                    quantidade=quantidade_str,
                                    preco_unitario=preco_unitario_str,
                                    tipo_operacao=tipo_operacao,
                                    custos_taxas=custos_taxas_str,
-                                   observacoes=observacoes,
-                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
-                                   simbolo_ativo_select=simbolo_ativo_select_value)
+                                   observacoes=observacoes)
 
         if quantidade <= 0:
             flash('Quantidade deve ser maior que zero.', 'danger')
             return render_template('add_transaction.html', symbols=symbols,
                                    data_transacao=data_transacao_str,
                                    hora_transacao=hora_transacao_str,
-                                   simbolo_ativo=simbolo_ativo, # Garante que o valor preenchido retorne
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value,
                                    quantidade=quantidade_str,
                                    preco_unitario=preco_unitario_str,
                                    tipo_operacao=tipo_operacao,
                                    custos_taxas=custos_taxas_str,
-                                   observacoes=observacoes,
-                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
-                                   simbolo_ativo_select=simbolo_ativo_select_value)
+                                   observacoes=observacoes)
         
         if preco_unitario <= 0:
             flash('Preço Unitário deve ser maior que zero.', 'danger')
             return render_template('add_transaction.html', symbols=symbols,
                                    data_transacao=data_transacao_str,
                                    hora_transacao=hora_transacao_str,
-                                   simbolo_ativo=simbolo_ativo, # Garante que o valor preenchido retorne
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value,
                                    quantidade=quantidade_str,
                                    preco_unitario=preco_unitario_str,
                                    tipo_operacao=tipo_operacao,
                                    custos_taxas=custos_taxas_str,
-                                   observacoes=observacoes,
-                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
-                                   simbolo_ativo_select=simbolo_ativo_select_value)
+                                   observacoes=observacoes)
         
         # Mapeamento do símbolo ativo para o formato YFinance para salvar no DB
-        simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo.upper(), simbolo_ativo)
-        if simbolo_ativo_yf == simbolo_ativo and \
-           not any(c in simbolo_ativo for c in ['^', '-', '=']) and \
-           not any(simbolo_ativo.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
-            if 4 <= len(simbolo_ativo) <= 6 and simbolo_ativo.isalnum():
-                simbolo_ativo_yf = f"{simbolo_ativo.upper()}.SA"
+        # Usa o final_simbolo_para_processamento que já foi validado e capitalizado/stripado
+        simbolo_ativo_yf = SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
+        if simbolo_ativo_yf == final_simbolo_para_processamento and \
+           not any(c in final_simbolo_para_processamento for c in ['^', '-', '=']) and \
+           not any(final_simbolo_para_processamento.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
+            if 4 <= len(final_simbolo_para_processamento) <= 6 and final_simbolo_para_processamento.isalnum():
+                simbolo_ativo_yf = f"{final_simbolo_para_processamento.upper()}.SA"
         simbolo_ativo_yf = simbolo_ativo_yf.upper() # Garante que o símbolo final esteja em maiúsculas
+        
+        print(f"DEBUG: Simbolo ativo YF final para DB: {simbolo_ativo_yf}")
 
         try:
             with DBConnectionManager() as cursor_db:
@@ -1333,16 +1324,24 @@ def add_transaction():
             return render_template('add_transaction.html', symbols=symbols,
                                    data_transacao=data_transacao_str,
                                    hora_transacao=hora_transacao_str,
-                                   simbolo_ativo=simbolo_ativo,
+                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
+                                   simbolo_ativo_select=simbolo_ativo_select_value,
                                    quantidade=quantidade_str,
                                    preco_unitario=preco_unitario_str,
                                    tipo_operacao=tipo_operacao,
                                    custos_taxas=custos_taxas_str,
-                                   observacoes=observacoes,
-                                   simbolo_ativo_manual=simbolo_ativo_manual_value,
-                                   simbolo_ativo_select=simbolo_ativo_select_value)
+                                   observacoes=observacoes)
 
-    return render_template('add_transaction.html', user_name=user_name, symbols=symbols)
+    # Para GET request ou quando há erro na submissão
+    # Adiciona valores iniciais para simbolo_ativo_manual e simbolo_ativo_select para o caso de um POST com erro.
+    initial_simbolo_ativo_manual = request.args.get('simbolo_ativo_manual', '')
+    initial_simbolo_ativo_select = request.args.get('simbolo_ativo_select', '')
+    
+    return render_template('add_transaction.html', 
+                           user_name=user_name, 
+                           symbols=symbols,
+                           simbolo_ativo_manual=initial_simbolo_ativo_manual,
+                           simbolo_ativo_select=initial_simbolo_ativo_select)
 
 
 @app.route('/edit_transaction/<int:transaction_id>', methods=['GET', 'POST'])
@@ -1444,7 +1443,7 @@ def edit_transaction(transaction_id):
         transaction['hora_transacao_formatted'] = None
 
     original_simbolo_ativo_display = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
-    transaction['simbolo_ativo_display'] = original_simbolo_ativo_display
+    transaction['simbolo_ativo_display'] = original_simbolo_display # Corrigido: Usar 'original_simbolo_ativo_display'
 
     return render_template('editar_transacao.html',
                            user_name=user_name,

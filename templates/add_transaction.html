@@ -30,14 +30,19 @@
 
         <div class="mb-4">
             <label class="block text-gray-700 text-sm font-bold mb-2">Símbolo do Ativo:</label>
-            <select name="simbolo_ativo_select" id="simbolo_ativo_select" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            <select id="simbolo_ativo_select" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
                 <option value="">Selecione um ativo existente</option>
                 {% for symbol_name in symbols %}
                     <option value="{{ symbol_name }}" {% if simbolo_ativo_select and simbolo_ativo_select == symbol_name %}selected{% elif simbolo_ativo and simbolo_ativo == symbol_name %}selected{% endif %}>{{ symbol_name }} ({{ SYMBOL_MAPPING.get(symbol_name, symbol_name) }})</option>
                 {% endfor %}
                 <option value="OUTRO" {% if simbolo_ativo_manual %}selected{% endif %}>Outro (digitar manualmente)</option>
             </select>
-            <input type="text" name="simbolo_ativo_manual" id="simbolo_ativo_manual" placeholder="Digite o símbolo do ativo (ex: GOOG, APPL3.SA)" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline mt-2 {% if not simbolo_ativo_manual %}hidden{% endif %}" value="{{ simbolo_ativo_manual if simbolo_ativo_manual else '' }}">
+            <input type="text" id="simbolo_ativo_manual" placeholder="Digite o símbolo do ativo (ex: GOOG, APPL3.SA)" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline mt-2 {% if not simbolo_ativo_manual %}hidden{% endif %}" value="{{ simbolo_ativo_manual if simbolo_ativo_manual else '' }}">
+            
+            <!-- Campos hidden para enviar o valor correto para o Flask -->
+            <input type="hidden" name="simbolo_ativo" id="final_simbolo_ativo_input">
+            <input type="hidden" name="simbolo_ativo_select_hidden" id="simbolo_ativo_select_hidden" value="{{ simbolo_ativo_select }}">
+            <input type="hidden" name="simbolo_ativo_manual_hidden" id="simbolo_ativo_manual_hidden" value="{{ simbolo_ativo_manual }}">
         </div>
 
         <div class="mb-4">
@@ -78,22 +83,38 @@
     document.addEventListener('DOMContentLoaded', function() {
         const selectElement = document.getElementById('simbolo_ativo_select');
         const manualInputElement = document.getElementById('simbolo_ativo_manual');
+        const finalSimboloInput = document.getElementById('final_simbolo_ativo_input');
+        const hiddenSelectValueInput = document.getElementById('simbolo_ativo_select_hidden');
+        const hiddenManualValueInput = document.getElementById('simbolo_ativo_manual_hidden');
+
+        function updateFinalSymbol() {
+            if (selectElement.value === 'OUTRO') {
+                finalSimboloInput.value = manualInputElement.value;
+                hiddenSelectValueInput.value = 'OUTRO'; // Store 'OUTRO'
+                hiddenManualValueInput.value = manualInputElement.value; // Store manual input
+            } else {
+                finalSimboloInput.value = selectElement.value;
+                hiddenSelectValueInput.value = selectElement.value; // Store selected value
+                hiddenManualValueInput.value = ''; // Clear manual input in hidden field
+            }
+        }
 
         function toggleManualInput() {
             if (selectElement.value === 'OUTRO') {
                 manualInputElement.classList.remove('hidden');
                 manualInputElement.setAttribute('required', 'required');
-                selectElement.removeAttribute('name'); // Remove name from select to prevent sending its value
-                manualInputElement.setAttribute('name', 'simbolo_ativo'); // Assign name to manual input
+                // Ensure manual input is focused when revealed
+                manualInputElement.focus();
             } else {
                 manualInputElement.classList.add('hidden');
                 manualInputElement.removeAttribute('required');
-                manualInputElement.removeAttribute('name'); // Remove name from manual input
-                selectElement.setAttribute('name', 'simbolo_ativo'); // Assign name back to select
+                manualInputElement.value = ''; // Clear manual input value when hidden
             }
+            updateFinalSymbol(); // Update the final hidden input immediately
         }
 
         selectElement.addEventListener('change', toggleManualInput);
+        manualInputElement.addEventListener('input', updateFinalSymbol); // Update on manual input change
 
         // Initial call to set correct state on page load (e.g., if there was a validation error and form reloaded)
         toggleManualInput();

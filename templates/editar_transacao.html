@@ -30,8 +30,13 @@
         <div class="mb-4">
             <label for="simbolo_ativo" class="block text-gray-700 text-sm font-bold mb-2">Símbolo do Ativo:</label>
             <select name="simbolo_ativo" id="simbolo_ativo" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                {# Opção selecionada dinamicamente com base no valor atual da transação #}
+                <option value="{{ transaction.simbolo_ativo }}" selected>{{ transaction.simbolo_ativo_display }} ({{ transaction.simbolo_ativo }})</option>
+                {# Outras opções, garantindo que a opção atual não seja duplicada #}
                 {% for symbol_name in symbols %}
-                    <option value="{{ symbol_name }}" {% if transaction.simbolo_ativo_display == symbol_name %}selected{% endif %}>{{ symbol_name }} ({{ SYMBOL_MAPPING.get(symbol_name, symbol_name) }})</option>
+                    {% if symbol_name != transaction.simbolo_ativo_display and SYMBOL_MAPPING.get(symbol_name) != transaction.simbolo_ativo %}
+                        <option value="{{ symbol_name }}">{{ symbol_name }} ({{ SYMBOL_MAPPING.get(symbol_name, symbol_name) }})</option>
+                    {% endif %}
                 {% endfor %}
             </select>
         </div>
