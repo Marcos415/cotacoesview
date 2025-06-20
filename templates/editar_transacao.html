@@ -30,7 +30,7 @@
         <div class="mb-4">
             <label for="simbolo_ativo" class="block text-gray-700 text-sm font-bold mb-2">Símbolo do Ativo:</label>
             <select name="simbolo_ativo" id="simbolo_ativo" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
-                {# Adiciona a opção da transação atual primeiro, para que seja sempre a primeira visível #}
+                {# Opção atual da transação - Garante que o valor salvo no DB seja selecionado por padrão #}
                 {% if transaction.simbolo_ativo %}
                     {% set current_display_name = REVERSE_SYMBOL_MAPPING.get(transaction.simbolo_ativo, transaction.simbolo_ativo) %}
                     <option value="{{ transaction.simbolo_ativo }}" selected>
@@ -40,14 +40,21 @@
                     <option value="">Selecione um ativo</option>
                 {% endif %}
 
-                {# Itera sobre os outros símbolos disponíveis, excluindo o que já foi adicionado #}
+                {# Outras opções, garantindo que o ativo atual não seja duplicado no select #}
                 {% for symbol_name in symbols %}
                     {% set ticker = SYMBOL_MAPPING.get(symbol_name, symbol_name) %}
                     {% if ticker != transaction.simbolo_ativo %} {# Evita duplicar a opção se já foi adicionada acima #}
-                        <option value="{{ symbol_name }}">{{ symbol_name }} ({{ ticker }})</option>
+                        <option value="{{ ticker }}">{{ symbol_name }} ({{ ticker }})</option>
                     {% endif %}
                 {% endfor %}
+                {# Adicionar a opção "Outro" para edição, se necessário #}
+                <option value="OUTRO_EDIT" {% if transaction.simbolo_ativo not in SYMBOL_MAPPING.values() and transaction.simbolo_ativo not in SYMBOL_MAPPING.keys() %}selected{% endif %}>Outro (digitar manualmente)</option>
             </select>
+            {# Campo para digitar o símbolo manualmente, visível se "Outro" for selecionado ou se o símbolo atual não for padrão #}
+            <input type="text" name="simbolo_ativo_manual_edit" id="simbolo_ativo_manual_edit"
+                   placeholder="Digite o símbolo do ativo (ex: GOOG, APPL3.SA)"
+                   class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline mt-2 {% if transaction.simbolo_ativo in SYMBOL_MAPPING.values() or transaction.simbolo_ativo in SYMBOL_MAPPING.keys() %}hidden{% endif %}"
+                   value="{{ transaction.simbolo_ativo if transaction.simbolo_ativo not in SYMBOL_MAPPING.values() and transaction.simbolo_ativo not in SYMBOL_MAPPING.keys() else '' }}">
         </div>
         <div class="mb-4">
             <label for="quantidade" class="block text-gray-700 text-sm font-bold mb-2">Quantidade:</label>
@@ -82,4 +89,45 @@
         </div>
     </form>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const selectElement = document.getElementById('simbolo_ativo');
+        const manualInputElement = document.getElementById('simbolo_ativo_manual_edit');
+
+        function toggleManualInput() {
+            if (selectElement.value === 'OUTRO_EDIT') {
+                manualInputElement.classList.remove('hidden');
+                manualInputElement.setAttribute('required', 'required');
+                manualInputElement.name = 'simbolo_ativo'; // Define name para o input manual
+                selectElement.removeAttribute('name'); // Remove name do select
+            } else {
+                manualInputElement.classList.add('hidden');
+                manualInputElement.removeAttribute('required');
+                manualInputElement.removeAttribute('name'); // Remove name do input manual
+                selectElement.name = 'simbolo_ativo'; // Define name para o select
+            }
+        }
+
+        selectElement.addEventListener('change', toggleManualInput);
+
+        // Define o estado inicial correto ao carregar a página
+        // Verifica se a opção "OUTRO_EDIT" está selecionada ou se o valor atual não está no mapeamento padrão
+        const isCurrentSymbolManual = !{{ transaction.simbolo_ativo in SYMBOL_MAPPING.values() or transaction.simbolo_ativo in SYMBOL_MAPPING.keys() }};
+        if (isCurrentSymbolManual) {
+            selectElement.value = 'OUTRO_EDIT'; // Seleciona "Outro" no dropdown
+            manualInputElement.value = '{{ transaction.simbolo_ativo }}'; // Preenche o campo manual com o símbolo atual
+            manualInputElement.classList.remove('hidden');
+            manualInputElement.setAttribute('required', 'required');
+            manualInputElement.name = 'simbolo_ativo';
+            selectElement.removeAttribute('name');
+        } else {
+            selectElement.value = '{{ transaction.simbolo_ativo }}'; // Seleciona o símbolo mapeado
+            manualInputElement.classList.add('hidden');
+            manualInputElement.removeAttribute('required');
+            manualInputElement.removeAttribute('name');
+            selectElement.name = 'simbolo_ativo';
+        }
+    });
+</script>
 {% endblock %}

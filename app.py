@@ -911,13 +911,15 @@ def index():
 
     # Dados da Carteira
     posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado = calcular_posicoes_carteira(user_id)
+    print(f"DEBUG: index route - Posições da carteira: {posicoes}")
+    print(f"DEBUG: index route - Total valor carteira: {total_valor_carteira}")
 
     # Gráfico de Pizza
     chart_labels = []
     chart_values = []
     for simbolo, dados in posicoes.items():
         if dados['valor_atual'] > 0:
-            chart_labels.append(simbolo)
+            chart_labels.append(REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo)) # Use nome amigável para o label
             chart_values.append(dados['valor_atual'])
 
     pie_chart_json = None
@@ -929,6 +931,10 @@ def index():
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="#333"), height=350
         )
         pie_chart_json = json.dumps(fig_pie, cls=plotly.utils.PlotlyJSONEncoder)
+        print(f"DEBUG: index route - Pie chart JSON gerado.")
+    else:
+        print(f"DEBUG: index route - Nenhum dado para o gráfico de pizza. Labels: {chart_labels}, Values: {chart_values}")
+
 
     # Gráfico de Barras Lucro/Prejuízo Não Realizado
     profit_loss_labels = []
@@ -937,7 +943,7 @@ def index():
 
     for simbolo, dados in posicoes.items():
         if dados['lucro_prejuizo_nao_realizado'] is not None:
-            profit_loss_labels.append(simbolo)
+            profit_loss_labels.append(REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo)) # Use nome amigável para o label
             profit_loss_values.append(dados['lucro_prejuizo_nao_realizado'])
             profit_loss_colors.append('green' if dados['lucro_prejuizo_nao_realizado'] >= 0 else 'red')
 
@@ -953,6 +959,10 @@ def index():
             plot_bgcolor='rgba(0,0,0,0)', font=dict(color="#333"), height=350
         )
         bar_chart_json = json.dumps(bar_fig, cls=plotly.utils.PlotlyJSONEncoder)
+        print(f"DEBUG: index route - Bar chart JSON gerado.")
+    else:
+        print(f"DEBUG: index route - Nenhum dado para o gráfico de barras. Labels: {profit_loss_labels}, Values: {profit_loss_values}")
+
 
     # Notícias
     news_query = "Mercado Financeiro Brasil"
@@ -974,9 +984,13 @@ def index():
         user_id, data_inicio, data_fim, ordenar_por, ordem, simbolo_filtro=simbolo_filtro_mapeado, page=page, per_page=TRANSACTIONS_PER_PAGE
     )
     total_pages = (total_transacoes + TRANSACTIONS_PER_PAGE - 1) // TRANSACTIONS_PER_PAGE
+    print(f"DEBUG: index route - Transações: {len(transacoes)}, Total: {total_transacoes}")
+
 
     # Alertas de Preço
     alertas = buscar_alertas(user_id)
+    print(f"DEBUG: index route - Alertas encontrados: {len(alertas)}")
+
 
     return render_template('index.html',
                            user_name=user_name,
@@ -1358,10 +1372,12 @@ def edit_transaction(transaction_id):
             transaction = cursor_db.fetchone()
     except Exception as e:
         flash(f"Erro ao buscar transação para edição: {e}", "danger")
+        print(f"ERRO: edit_transaction - Erro ao buscar transação: {e}")
         return redirect(url_for('transactions_list'))
 
     if not transaction:
         flash('Transação não encontrada ou você não tem permissão para editá-la.', 'danger')
+        print(f"DEBUG: edit_transaction - Transação {transaction_id} não encontrada ou não pertence ao user {user_id}.")
         return redirect(url_for('transactions_list'))
 
     # DEBUG: Imprime o objeto transaction ANTES da formatação para ver o estado inicial
@@ -1380,7 +1396,8 @@ def edit_transaction(transaction_id):
                 transaction['hora_transacao_formatted'] = request.form.get('hora_transacao')
             else:
                 transaction['hora_transacao_formatted'] = None
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+            # Tenta obter o nome amigável para exibição em caso de erro
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
             return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
         hora_transacao_str = request.form.get('hora_transacao')
@@ -1392,7 +1409,7 @@ def edit_transaction(transaction_id):
                 flash('Formato de hora inválido. Use HH:MM.', 'danger')
                 transaction['data_transacao_formatted'] = data_transacao_str
                 transaction['hora_transacao_formatted'] = hora_transacao_str
-                transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+                transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
                 return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
         simbolo_ativo = request.form['simbolo_ativo']
@@ -1410,7 +1427,7 @@ def edit_transaction(transaction_id):
             flash('Quantidade, Preço Unitário ou Custos/Taxas devem ser números válidos.', 'danger')
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
             # Passa os valores do formulário para o template para preencher novamente
             transaction['quantidade'] = quantidade
             transaction['preco_unitario'] = preco_unitario
@@ -1422,7 +1439,7 @@ def edit_transaction(transaction_id):
             flash('Quantidade e Preço Unitário devem ser maiores que zero.', 'danger')
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
             transaction['quantidade'] = quantidade
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
@@ -1457,7 +1474,7 @@ def edit_transaction(transaction_id):
             print(f"Erro ao atualizar transação: {e}")
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
             transaction['quantidade'] = quantidade
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
@@ -1473,20 +1490,13 @@ def edit_transaction(transaction_id):
         transaction['data_transacao_formatted'] = None # Garante que a chave existe
 
     if 'hora_transacao' in transaction and transaction['hora_transacao']:
-        # if isinstance(transaction['hora_transacao'], datetime.timedelta):
-        #     total_seconds = int(transaction['hora_transacao'].total_seconds())
-        #     hours, remainder = divmod(total_seconds, 3600)
-        #     minutes, seconds = divmod(remainder, 60)
-        #     transaction['hora_transacao_formatted'] = datetime.time(hours, minutes, seconds).strftime('%H:%M')
-        if isinstance(transaction['hora_transacao'], (datetime.time, datetime.timedelta)): # Updated to handle timedelta or time
-            # Convert timedelta to time object for consistent formatting
-            if isinstance(transaction['hora_transacao'], datetime.timedelta):
-                total_seconds = int(transaction['hora_transacao'].total_seconds())
-                hours, remainder = divmod(total_seconds, 3600)
-                minutes, _ = divmod(remainder, 60)
-                transaction['hora_transacao_formatted'] = f"{hours:02d}:{minutes:02d}"
-            else: # Already a datetime.time object
-                transaction['hora_transacao_formatted'] = transaction['hora_transacao'].strftime('%H:%M')
+        if isinstance(transaction['hora_transacao'], datetime.timedelta):
+            total_seconds = int(transaction['hora_transacao'].total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            transaction['hora_transacao_formatted'] = f"{hours:02d}:{minutes:02d}"
+        elif isinstance(transaction['hora_transacao'], datetime.time):
+            transaction['hora_transacao_formatted'] = transaction['hora_transacao'].strftime('%H:%M')
         else:
             transaction['hora_transacao_formatted'] = None
     else:
@@ -1494,7 +1504,7 @@ def edit_transaction(transaction_id):
 
     # Define simbolo_ativo_display para o template
     transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
-
+    
     print(f"DEBUG: edit_transaction - Transaction object antes de renderizar template: {transaction}")
     print(f"DEBUG: Símbolo de exibição no template: {transaction.get('simbolo_ativo_display')}")
     print(f"DEBUG: Símbolo YF no template: {transaction.get('simbolo_ativo')}")
@@ -1770,6 +1780,7 @@ def get_historical_chart_data(simbolo):
     cache_key = (simbolo_yf, "1y", "1d")
 
     if is_cache_fresh(historical_chart_cache, cache_key, HISTORICAL_CHART_CACHE_TTL):
+        print(f"DEBUG: Dados históricos para {simbolo_yf} encontrados no cache.")
         return jsonify(historical_chart_cache[cache_key]['data'])
 
     try:
@@ -1801,6 +1812,7 @@ def get_historical_chart_data(simbolo):
         
         response_data = {'simbolo': simbolo, 'plot_json': plot_json}
         historical_chart_cache[cache_key] = {'data': response_data, 'timestamp': datetime.datetime.now()}
+        print(f"DEBUG: Dados históricos para {simbolo_yf} obtidos e cacheados.")
         return jsonify(response_data)
 
     except Exception as e:
