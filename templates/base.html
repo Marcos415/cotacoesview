@@ -42,10 +42,10 @@
                                 Admin <span class="ml-1 text-sm">&#9662;</span>
                             </button>
                             <div class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-20 
-                                        opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 
-                                        transition-opacity duration-200 ease-out invisible group-hover:visible group-focus-within:visible">
+                                         opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 
+                                         transition-opacity duration-200 ease-out invisible group-hover:visible group-focus-within:visible">
                                 <a href="{{ url_for('admin_dashboard') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-100">Painel Admin</a>
-                                <a href="{{ url_for('admin_audit_logs_view') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-100">Logs Auditoria</a>
+                                <a href="{{ url_for('admin_audit_logs') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-blue-100">Logs Auditoria</a> {# CORREÇÃO AQUI #}
                             </div>
                         </div>
                     {% endif %}
