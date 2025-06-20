@@ -873,6 +873,12 @@ def index():
 def register():
     if request.method == 'POST':
         try: # Adicionado bloco try-except para capturar erros
+            # --- NOVAS LINHAS DE DEBUG AQUI ---
+            print(f"DEBUG: ROTA /REGISTER (POST) - Headers da Requisição: {request.headers}")
+            print(f"DEBUG: ROTA /REGISTER (POST) - Dados crus da requisição (request.get_data()): {request.get_data(as_text=True)}")
+            print(f"DEBUG: ROTA /REGISTER (POST) - Conteúdo do Formulário (request.form): {request.form}")
+            # --- FIM DAS NOVAS LINHAS DE DEBUG ---
+
             username = request.form['username']
             password = request.form['password']
             confirm_password = request.form['confirm_password']
