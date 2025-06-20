@@ -728,6 +728,23 @@ def fetch_news(query):
         print(f"Erro ao decodificar JSON da API de notícias: {e}. Resposta: {response.text}")
         return []
 
+# --- FUNÇÃO: Verificar se uma tabela existe ---
+def check_table_exists(table_name):
+    print(f"DEBUG: Verificando se a tabela '{table_name}' existe...")
+    try:
+        with DBConnectionManager(dictionary=True) as cursor_db:
+            if DB_TYPE == 'postgresql':
+                cursor_db.execute(f"SELECT to_regclass('{table_name}') IS NOT NULL AS exists_table;")
+            else: # MySQL
+                cursor_db.execute(f"SELECT COUNT(*) AS exists_table FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '{table_name}';")
+            result = cursor_db.fetchone()
+            exists = result['exists_table']
+            print(f"DEBUG: Tabela '{table_name}' existe: {exists}")
+            return exists
+    except Exception as e:
+        print(f"ERRO: Falha ao verificar a existência da tabela '{table_name}': {e}")
+        return False
+
 # --- NOVA FUNÇÃO: Criar tabelas se não existirem ---
 def create_tables_if_not_exist():
     print("DEBUG: Iniciando verificação e criação de tabelas...")
@@ -735,7 +752,7 @@ def create_tables_if_not_exist():
         with DBConnectionManager() as cursor_db:
             if DB_TYPE == 'postgresql':
                 # Tabela 'users'
-                print("DEBUG: Tentando criar tabela 'users' (PostgreSQL)...")
+                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS users (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id SERIAL PRIMARY KEY,
@@ -748,10 +765,10 @@ def create_tables_if_not_exist():
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Tabela 'users' verificada/criada.")
+                print("DEBUG: Comando SQL para 'users' executado.")
 
                 # Tabela 'transacoes' (depende de 'users')
-                print("DEBUG: Tentando criar tabela 'transacoes' (PostgreSQL)...")
+                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS transacoes (
                         id SERIAL PRIMARY KEY,
@@ -768,10 +785,10 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Tabela 'transacoes' verificada/criada.")
+                print("DEBUG: Comando SQL para 'transacoes' executado.")
 
                 # Tabela 'alerts' (depende de 'users')
-                print("DEBUG: Tentando criar tabela 'alerts' (PostgreSQL)...")
+                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS alerts (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS alerts (
                         id SERIAL PRIMARY KEY,
@@ -785,10 +802,10 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Tabela 'alerts' verificada/criada.")
+                print("DEBUG: Comando SQL para 'alerts' executado.")
 
                 # Tabela 'admin_audit_logs'
-                print("DEBUG: Tentando criar tabela 'admin_audit_logs' (PostgreSQL)...")
+                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS admin_audit_logs (
                         id SERIAL PRIMARY KEY,
@@ -801,10 +818,11 @@ def create_tables_if_not_exist():
                         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Tabela 'admin_audit_logs' verificada/criada.")
+                print("DEBUG: Comando SQL para 'admin_audit_logs' executado.")
 
             else: # MySQL
-                print("DEBUG: Tentando criar tabela 'users' (MySQL)...")
+                # Tabela 'users'
+                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS users (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -817,9 +835,9 @@ def create_tables_if_not_exist():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Tabela 'users' verificada/criada.")
+                print("DEBUG: Comando SQL para 'users' executado.")
 
-                print("DEBUG: Tentando criar tabela 'transacoes' (MySQL)...")
+                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS transacoes (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -836,9 +854,9 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Tabela 'transacoes' verificada/criada.")
+                print("DEBUG: Comando SQL para 'transacoes' executado.")
 
-                print("DEBUG: Tentando criar tabela 'alerts' (MySQL)...")
+                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS alerts (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS alerts (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -852,9 +870,9 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Tabela 'alerts' verificada/criada.")
+                print("DEBUG: Comando SQL para 'alerts' executado.")
 
-                print("DEBUG: Tentando criar tabela 'admin_audit_logs' (MySQL)...")
+                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS admin_audit_logs (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -867,13 +885,11 @@ def create_tables_if_not_exist():
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Tabela 'admin_audit_logs' verificada/criada.")
-            print("DEBUG: Verificação e criação de tabelas concluída.")
+                print("DEBUG: Comando SQL para 'admin_audit_logs' executado.")
+            print("DEBUG: Todas as operações CREATE TABLE IF NOT EXISTS foram enviadas ao banco de dados.")
     except Exception as e:
-        print(f"ERRO: Falha ao verificar/criar tabelas: {e}")
-        # É CRÍTICO que a aplicação NÃO continue se as tabelas essenciais não puderem ser criadas
-        # ou haverá mais erros. Re-lança a exceção.
-        raise
+        print(f"ERRO CRÍTICO: Falha ao tentar verificar/criar tabelas: {e}")
+        raise # Re-lança a exceção para que a Render saiba que a inicialização falhou
 
 # --- ROTAS DA APLICAÇÃO ---
 
@@ -1652,8 +1668,39 @@ def predict_price_api(simbolo):
     else:
         return jsonify({'error': 'Não foi possível obter previsão para este símbolo.', 'simbolo': simbolo}), 404
 
+print("DEBUG: Entrando no bloco if __name__ == '__main__':")
 if __name__ == '__main__':
     # Chama a função para criar tabelas no início
-    create_tables_if_not_exist()
+    try:
+        create_tables_if_not_exist()
+        print("DEBUG: create_tables_if_not_exist() finalizada. Verificando a existência das tabelas agora...")
+        
+        # Verificações pós-criação
+        if check_table_exists('users'):
+            print("DEBUG: Tabela 'users' confirmada após a tentativa de criação.")
+        else:
+            print("ERRO: Tabela 'users' NÃO EXISTE após a tentativa de criação!")
+        
+        if check_table_exists('transacoes'):
+            print("DEBUG: Tabela 'transacoes' confirmada após a tentativa de criação.")
+        else:
+            print("ERRO: Tabela 'transacoes' NÃO EXISTE após a tentativa de criação!")
+
+        if check_table_exists('alerts'):
+            print("DEBUG: Tabela 'alerts' confirmada após a tentativa de criação.")
+        else:
+            print("ERRO: Tabela 'alerts' NÃO EXISTE após a tentativa de criação!")
+        
+        if check_table_exists('admin_audit_logs'):
+            print("DEBUG: Tabela 'admin_audit_logs' confirmada após a tentativa de criação.")
+        else:
+            print("ERRO: Tabela 'admin_audit_logs' NÃO EXISTE após a tentativa de criação!")
+
+    except Exception as startup_error:
+        print(f"ERRO CRÍTICO NA INICIALIZAÇÃO: A aplicação falhou ao iniciar devido a problemas no banco de dados: {startup_error}")
+        import sys
+        sys.exit(1) # Força a saída se a criação das tabelas falhar
+
     port = int(os.environ.get("PORT", 5000))
+    print(f"DEBUG: Iniciando Flask app em host 0.0.0.0, porta {port}")
     app.run(debug=True, host='0.0.0.0', port=port)
