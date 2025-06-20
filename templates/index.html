@@ -103,15 +103,21 @@
 
         <!-- Cartão de Lucro/Prejuízo Total Não Realizado -->
         <div class="rounded-lg shadow-lg p-6 text-white flex flex-col justify-between 
-                    {% if (total_lucro_nao_realizado + total_prejuizo_nao_realizado) >= 0 %}bg-gradient-to-r from-green-500 to-green-600{% else %}bg-gradient-to-r from-red-500 to-red-600{% endif %}
-                    transform transition-transform hover:scale-105">
+                     {% if (total_lucro_nao_realizado + total_prejuizo_nao_realizado) >= 0 %}bg-gradient-to-r from-green-500 to-green-600{% else %}bg-gradient-to-r from-red-500 to-red-600{% endif %}
+                     transform transition-transform hover:scale-105">
             <div>
                 <p class="text-sm font-medium opacity-80">Lucro/Prejuízo Total (Não Realizado)</p>
                 <p class="text-3xl font-bold mt-1">R$ {{ (total_lucro_nao_realizado + total_prejuizo_nao_realizado) | floatformat(2) }}</p>
             </div>
             <div class="mt-4 text-sm opacity-90">
                 <p>Lucro/Prejuízo flutuante das suas posições abertas.</p>
-            (Valor Percentual): {{ ((total_lucro_nao_realizado + total_prejuizo_nao_realizado) / total_valor_carteira * 100) | default(0) | floatformat(2) }}%
+                {# CORREÇÃO AQUI: Adiciona if para evitar divisão por zero #}
+                {% set lucro_total_consolidado = total_lucro_nao_realizado + total_prejuizo_nao_realizado %}
+                {% if total_valor_carteira > 0 %}
+                    (Valor Percentual): {{ (lucro_total_consolidado / total_valor_carteira * 100) | floatformat(2) }}%
+                {% else %}
+                    (Valor Percentual): 0.00%
+                {% endif %}
             </div>
         </div>
 
@@ -119,7 +125,7 @@
         <div class="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white flex flex-col justify-between transform transition-transform hover:scale-105">
             <div>
                 <p class="text-sm font-medium opacity-80">Número de Ativos Diferentes</p>
-                <p class="text-3xl font-bold mt-1">{{ posicoes_carteira|length }}</p>
+                <p class="text-3xl font-bold mt-1">{{ posicoes|length }}</p> {# CORREÇÃO AQUI: 'posicoes' em vez de 'posicoes_carteira' #}
             </div>
             <div class="mt-4 text-sm opacity-90">
                 <p>Quantidade de ativos distintos na sua carteira.</p>
@@ -134,7 +140,7 @@
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
             Adicionar Nova Transação
         </a>
-        <a href="{{ url_for('index') }}"
+        <a href="{{ url_for('transactions_list') }}" {# CORREÇÃO AQUI: url_for para transactions_list #}
            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:-translate-y-1 hover:scale-105 flex items-center min-w-[220px] justify-center">
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
             Ver Todas as Transações
@@ -147,7 +153,7 @@
         <!-- Wrapper para rolagem vertical (~5-6 itens visíveis) -->
         <div class="overflow-y-auto max-h-[280px] border border-gray-200 rounded-lg"> {# Ajustado max-h aqui #}
             <div class="overflow-x-auto"> {# Permite rolagem horizontal APENAS dentro desta div se a tabela for muito larga #}
-                {% if posicoes_carteira %}
+                {% if posicoes %} {# CORREÇÃO AQUI: 'posicoes' em vez de 'posicoes_carteira' #}
                 <!-- Adicionando table-fixed e otimizando larguras de coluna para evitar rolagem horizontal -->
                 <table class="min-w-full divide-y divide-gray-200 table-fixed">
                     <thead class="bg-gray-50 sticky top-0 z-10">
@@ -179,13 +185,13 @@
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
-                        {% for simbolo, dados in posicoes_carteira.items() %}
+                        {% for simbolo, dados in posicoes.items() %} {# CORREÇÃO AQUI: 'posicoes' em vez de 'posicoes_carteira' #}
                         <tr>
                             <td class="px-4 py-2 text-sm font-medium text-gray-900 truncate"> {# truncate para evitar overflow de texto #}
-                                {{ dados.nome_popular }} ({{ simbolo }})
+                                {{ REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo) }} ({{ simbolo }}) {# Usando REVERSE_SYMBOL_MAPPING para nome amigável #}
                             </td>
                             <td class="px-4 py-2 text-sm text-gray-500">
-                                {{ dados.quantidade_total | floatformat(2) }}
+                                {{ dados.quantidade | floatformat(4) }} {# Usa 'quantidade' diretamente de 'dados' #}
                             </td>
                             <td class="px-4 py-2 text-sm text-gray-500">
                                 R$ {{ dados.preco_medio | floatformat(2) }}
@@ -205,19 +211,19 @@
                                 {% endif %}
                             </td>
                             <td class="px-4 py-2 text-sm {% if dados.lucro_prejuizo_nao_realizado is not none and dados.lucro_prejuizo_nao_realizado >= 0 %}text-green-600{% elif dados.lucro_prejuizo_nao_realizado is not none and dados.lucro_prejuizo_nao_realizado < 0 %}text-red-600{% else %}text-gray-500{% endif %}">
-                                {% if dados.lucro_prejuizo_nao_realizado is not none %}
-                                    R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) }} ({{ ((dados.lucro_prejuizo_nao_realizado / (dados.preco_medio * dados.quantidade_total)) * 100) | default(0) | floatformat(2) }}%)
+                                {% if dados.lucro_prejuizo_nao_realizado is not none and dados.preco_medio * dados.quantidade > 0 %}
+                                    R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) }} ({{ ((dados.lucro_prejuizo_nao_realizado / (dados.preco_medio * dados.quantidade)) * 100) | default(0) | floatformat(2) }}%) {# CORREÇÃO AQUI: Divisão por zero #}
                                 {% else %}
-                                    N/A
+                                    R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) if dados.lucro_prejuizo_nao_realizado is not none else 'N/A' }} (0.00%)
                                 {% endif %}
                             </td>
                             <td class="px-4 py-2 text-sm text-gray-500">
-                                R$ {{ dados.valor_total_ativo | floatformat(2) }}
+                                R$ {{ dados.valor_atual | floatformat(2) }} {# Usa 'valor_atual' diretamente de 'dados' #}
                             </td>
                             <td class="px-4 py-2 text-right text-sm font-medium">
                                 <button type="button" 
                                         class="show-chart-btn bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-1 px-3 rounded-md text-xs transition-colors"
-                                        data-symbol="{{ simbolo }}" data-asset-name="{{ dados.nome_popular }}">Gráfico</button>
+                                        data-symbol="{{ simbolo }}" data-asset-name="{{ REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo) }}">Gráfico</button>
                             </td>
                         </tr>
                         {% endfor %}
@@ -231,280 +237,28 @@
     </div>
 
 
-    <!-- Filtros de Transações e Tabela de Transações -->
-    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-        <h2 class="text-2xl font-bold text-gray-800 mb-6">Histórico de Transações</h2>
-        <form method="GET" action="{{ url_for('index') }}" class="transaction-filter-form grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 items-end">
-            <div>
-                <label for="data_inicio" class="block text-sm font-medium text-gray-700">Data Início:</label>
-                <input type="date" id="data_inicio" name="data_inicio" value="{{ data_inicio | default('') }}"
-                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-            </div>
-            <div>
-                <label for="data_fim" class="block text-sm font-medium text-gray-700">Data Fim:</label>
-                <input type="date" id="data_fim" name="data_fim" value="{{ data_fim | default('') }}"
-                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-            </div>
-            <div>
-                <label for="simbolo_filtro" class="block text-sm font-medium text-gray-700">Símbolo/Nome:</label>
-                <input type="text" id="simbolo_filtro" name="simbolo_filtro" value="{{ simbolo_filtro | default('') }}"
-                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                       placeholder="Ex: PETR4, VALE3">
-            </div>
-            <div>
-                <label for="ordenar_por" class="block text-sm font-medium text-gray-700">Ordenar Por:</label>
-                <select id="ordenar_por" name="ordenar_por"
-                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-                    <option value="data_transacao" {% if ordenar_por == 'data_transacao' %}selected{% endif %}>Data da Transação</option>
-                    <option value="simbolo_ativo" {% if ordenar_por == 'simbolo_ativo' %}selected{% endif %}>Símbolo Ativo</option>
-                    <option value="preco_unitario" {% if ordenar_por == 'preco_unitario' %}selected{% endif %}>Preço Unitário</option>
-                    <option value="quantidade" {% if ordenar_por == 'quantidade' %}selected{% endif %}>Quantidade</option>
-                    <option value="tipo_operacao" {% if ordenar_por == 'tipo_operacao' %}selected{% endif %}>Tipo de Operação</option>
-                </select>
-            </div>
-            <div>
-                <label for="ordem" class="block text-sm font-medium text-gray-700">Ordem:</label>
-                <select id="ordem" name="ordem"
-                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-                    <option value="DESC" {% if ordem == 'DESC' %}selected{% endif %}>Descendente</option>
-                    <option value="ASC" {% if ordem == 'ASC' %}selected{% endif %}>Ascendente</option>
-                </select>
-            </div>
-            <div class="col-span-1 md:col-span-2 lg:col-span-4 flex justify-end space-x-2">
-                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
-                    Aplicar Filtros
-                </button>
-                <a href="{{ url_for('index') }}" class="bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
-                    Limpar Filtros
-                </a>
-            </div>
-        </form>
-
-        <div class="overflow-x-auto">
-            {% if transacoes %}
-            <table class="min-w-full divide-y divide-gray-200 table-auto"> {# Mantém table-auto para esta tabela, pois o número de colunas é maior e as observações podem variar #}
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Data
-                        </th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Hora
-                        </th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Símbolo Ativo
-                        </th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Tipo de Operação
-                        </th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Preço Unitário
-                        </th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Quantidade
-                        </th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Custos/Taxas
-                        </th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Observações
-                        </th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Ações
-                        </th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {% for transacao in transacoes %}
-                    <tr>
-                        <td class="px-4 py-2 text-sm text-gray-900">
-                            {{ transacao.data_transacao | datetimeformat }}
-                        </td>
-                        <td class="px-4 py-2 text-sm text-gray-500">
-                            {{ transacao.hora_transacao | datetimeformat('%H:%M') if transacao.hora_transacao else 'N/A' }}
-                        </td>
-                        <td class="px-4 py-2 text-sm text-gray-500">
-                            {{ REVERSE_SYMBOL_MAPPING.get(transacao.simbolo_ativo, transacao.simbolo_ativo) }} ({{ transacao.simbolo_ativo }})
-                        </td>
-                        <td class="px-4 py-2 text-sm {% if transacao.tipo_operacao == 'COMPRA' %}text-blue-600{% else %}text-red-600{% endif %} font-semibold">
-                            {{ transacao.tipo_operacao }}
-                        </td>
-                        <td class="px-4 py-2 text-sm text-gray-500">
-                            R$ {{ transacao.preco_unitario | floatformat(2) }}
-                        </td>
-                        <td class="px-4 py-2 text-sm text-gray-500">
-                            {{ transacao.quantidade | floatformat(2) }}
-                        </td>
-                        <td class="px-4 py-2 text-sm text-gray-500">
-                            R$ {{ transacao.custos_taxas | floatformat(2) }}
-                        </td>
-                        <td class="px-4 py-2 text-sm text-gray-500">
-                            {{ transacao.observacoes if transacao.observacoes else 'N/A' }}
-                        </td>
-                        <td class="px-4 py-2 text-left text-sm font-medium">
-                            <a href="{{ url_for('edit_transaction', id=transacao.id) }}" class="text-indigo-600 hover:text-indigo-900 mr-3">Editar</a>
-                            <form action="{{ url_for('excluir_transacao', id=transacao.id) }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir esta transação?');">
-                                <button type="submit" class="text-red-600 hover:text-red-900">Excluir</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-
-            <!-- Paginação -->
-            {% if total_pages > 1 %}
-            <nav class="mt-4 flex justify-center" aria-label="Pagination">
-                <ul class="flex items-center -space-x-px">
-                    {% if page > 1 %}
-                    <li>
-                        <a href="{{ url_for('index', page=page-1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
-                           class="pagination-link py-2 px-3 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white rounded-l-lg">Anterior</a>
-                    </li>
-                    {% endif %}
-                    {% for p in range(1, total_pages + 1) %}
-                    <li>
-                        <a href="{{ url_for('index', page=p, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
-                           class="pagination-link py-2 px-3 leading-tight {% if p == page %}text-blue-600 bg-blue-50 border-blue-300{% else %}text-gray-500 bg-white border border-gray-300{% endif %} hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white">
-                            {{ p }}
-                        </a>
-                    </li>
-                    {% endfor %}
-                    {% if page < total_pages %}
-                    <li>
-                        <a href="{{ url_for('index', page=page+1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
-                           class="pagination-link py-2 px-3 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white rounded-r-lg">Próxima</a>
-                    </li>
-                    {% endif %}
-                </ul>
-            </nav>
-            {% endif %}
-
-            {% else %}
-            <p class="text-center text-gray-500 py-4">Nenhuma transação encontrada com os filtros atuais.</p>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- Alertas de Preço -->
-    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-        <h2 class="text-2xl font-bold text-gray-800 mb-6">Meus Alertas de Preço</h2>
-        <form method="POST" action="{{ url_for('adicionar_alerta') }}" class="alert-form mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-                <label for="alerta_simbolo" class="block text-sm font-medium text-gray-700">Símbolo Ativo:</label>
-                <input type="text" id="alerta_simbolo" name="simbolo_ativo" required
-                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                       placeholder="Ex: PETR4, VALE3">
-            </div>
-            <div>
-                <label for="preco_alvo" class="block text-sm font-medium text-gray-700">Preço Alvo:</label>
-                <input type="number" step="0.01" id="preco_alvo" name="preco_alvo" required
-                       class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                       placeholder="Ex: 35.00">
-            </div>
-            <div>
-                <label for="tipo_alerta" class="block text-sm font-medium text-gray-700">Tipo de Alerta:</label>
-                <select id="tipo_alerta" name="tipo_alerta" required
-                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-                    <option value="ACIMA">Acima de</option>
-                    <option value="ABAIXO">Abaixo de</option>
-                </select>
-            </div>
-            <div class="md:col-span-3 flex justify-end">
-                <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
-                    Adicionar Alerta
-                </button>
-            </div>
-        </form>
-
-        <div class="overflow-x-auto">
-            {% if alertas %}
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Símbolo Ativo
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Preço Alvo
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Tipo
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Status
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Criado Em
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Disparado Em
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Ações
-                        </th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {% for alerta in alertas %}
-                    <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {{ REVERSE_SYMBOL_MAPPING.get(alerta.simbolo_ativo, alerta.simbolo_ativo) }} ({{ alerta.simbolo_ativo }})
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            R$ {{ alerta.preco_alvo | floatformat(2) }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {{ alerta.tipo_alerta }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm 
-                            {% if alerta.status == 'ATIVO' %}text-green-600{% elif alerta.status == 'DISPARADO' %}text-orange-600{% else %}text-gray-500{% endif %} font-semibold">
-                            {{ alerta.status }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {{ alerta.data_criacao | datetimeformat('%Y-%m-%d %H:%M') }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {{ alerta.data_disparo | datetimeformat('%Y-%m-%d %H:%M') if alerta.data_disparo else 'N/A' }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-left text-sm font-medium">
-                            <form action="{{ url_for('excluir_alerta') }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir este alerta?');">
-                                <input type="hidden" name="id" value="{{ alerta.id }}">
-                                <button type="submit" class="text-red-600 hover:text-red-900">Excluir</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <p class="text-center text-gray-500 py-4">Nenhum alerta de preço configurado. Adicione um para ser notificado!</p>
-            {% endif %}
-        </div>
-    </div>
-
     <!-- Seção de Notícias Financeiras -->
     <div class="bg-white rounded-lg shadow-lg p-6">
         <h2 class="text-2xl font-bold text-gray-800 mb-6">Notícias Financeiras Recentes</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {% for news_item in all_news %}
-            <div class="bg-gray-50 rounded-lg p-4 shadow-sm flex flex-col justify-between transition-transform hover:scale-[1.02]">
-                <div>
-                    <h3 class="font-semibold text-lg text-gray-900 mb-2 leading-tight">{{ news_item.title }}</h3>
-                    {% if news_item.simbolo_display %}
-                        <p class="text-xs text-gray-600 mb-2">Relacionado a: <span class="font-medium text-blue-700">{{ news_item.simbolo_display }}</span></p>
-                    {% endif %}
-                    <p class="text-sm text-gray-700 mb-3">{{ news_item.source }} - {{ news_item.date }}</p>
+            {% if news_articles %} {# CORREÇÃO AQUI: 'news_articles' em vez de 'all_news' #}
+                {% for article in news_articles %} {# CORREÇÃO AQUI: 'article' em vez de 'news_item' #}
+                <div class="bg-gray-50 rounded-lg p-4 shadow-sm flex flex-col justify-between transition-transform hover:scale-[1.02]">
+                    <div>
+                        <h3 class="font-semibold text-lg text-gray-900 mb-2 leading-tight">{{ article.title }}</h3>
+                        {# Removida a linha de simbolo_display, pois não está vindo diretamente na NewsAPI #}
+                        <p class="text-sm text-gray-700 mb-3">{{ article.source }} - {{ article.publishedAt | datetimeformat('%d-%m-%Y %H:%M') }}</p> {# Usa 'publishedAt' e filtro #}
+                    </div>
+                    <a href="{{ article.url }}" target="_blank" rel="noopener noreferrer" {# Usa 'article.url' #}
+                       class="text-blue-600 hover:text-blue-800 text-sm font-medium mt-auto flex items-center">
+                        Ler mais
+                        <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                    </a>
                 </div>
-                <a href="{{ news_item.link }}" target="_blank" rel="noopener noreferrer"
-                   class="text-blue-600 hover:text-blue-800 text-sm font-medium mt-auto flex items-center">
-                    Ler mais
-                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
-                </a>
-            </div>
+                {% endfor %}
             {% else %}
             <p class="text-center text-gray-500 py-4 col-span-full">Nenhuma notícia disponível no momento.</p>
-            {% endfor %}
+            {% endif %}
         </div>
     </div>
 </div>
@@ -514,224 +268,86 @@
     <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto flex flex-col">
         <!-- Modal Header -->
         <div class="flex justify-between items-center p-4 border-b border-gray-200">
-            <h3 id="chartModalTitle" class="text-xl font-bold text-gray-800">Gráfico Histórico</h3>
-            <button id="closeChartModal" class="text-gray-500 hover:text-gray-700">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
+            <h3 id="chartModalTitle" class="text-xl font-bold text-gray-800">Gráfico Histórico de Preços</h3>
+            <button id="closeChartModal" class="close-button">&times;</button>
         </div>
         <!-- Modal Body -->
-        <div class="p-4 flex-grow overflow-hidden">
-            <div class="flex items-center space-x-4 mb-4">
-                <label for="modal_chart_type_select" class="block text-sm font-medium text-gray-700">Tipo de Gráfico:</label>
-                <select id="modal_chart_type_select"
-                        class="mt-1 block pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-                    <option value="line">Linha</option>
-                    <option value="candlestick">Candlestick</option>
-                    <option value="area">Área</option>
-                </select>
-            </div>
-            <div id="modalHistoricalChart" class="w-full h-[500px] bg-gray-50 rounded-md flex items-center justify-center text-gray-500">
-                <!-- O gráfico será renderizado aqui -->
-                <div class="chart-loader"></div>
+        <div class="p-4 flex-grow relative flex items-center justify-center">
+            <div id="modalHistoricalChart" class="w-full h-full">
+                <!-- Loader aparecerá aqui enquanto o gráfico carrega -->
+                <div class="chart-loader mx-auto"></div> 
             </div>
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block scripts_extra %}
 <script>
-    // Variável global para armazenar o símbolo do ativo atualmente exibido no gráfico no modal
-    let currentModalGraphSymbol = null;
-    let currentModalGraphAssetName = ''; // Para exibir o nome popular no título do modal
-
-    // Garante que o script só é executado após o HTML estar completamente carregado
     document.addEventListener('DOMContentLoaded', function() {
-        // Elementos do modal (agora selecionados DENTRO do DOMContentLoaded)
+        // Renderiza o gráfico de pizza (já existe no app.py e passa a variável correta)
+        var pieChartData = {{ pie_chart_json | tojson }};
+        if (pieChartData) {
+            Plotly.newPlot('pieChart', pieChartData.data, pieChartData.layout);
+        }
+
+        // Renderiza o gráfico de barras (já existe no app.py e passa a variável correta)
+        var barChartData = {{ bar_chart_json | tojson }};
+        if (barChartData) {
+            Plotly.newPlot('barChart', barChartData.data, barChartData.layout);
+        }
+
+        // --- Lógica do Modal do Gráfico Histórico ---
         const chartModal = document.getElementById('chartModal');
-        const modalHistoricalChartDiv = document.getElementById('modalHistoricalChart');
         const closeChartModalBtn = document.getElementById('closeChartModal');
-        const modalChartTypeSelect = document.getElementById('modal_chart_type_select');
+        const modalHistoricalChart = document.getElementById('modalHistoricalChart');
         const chartModalTitle = document.getElementById('chartModalTitle');
 
-        console.log('DOMContentLoaded: Script carregado. Elementos do modal encontrados:', 
-                    { chartModal: !!chartModal, modalHistoricalChartDiv: !!modalHistoricalChartDiv, 
-                      closeChartModalBtn: !!closeChartModalBtn, modalChartTypeSelect: !!modalChartTypeSelect,
-                      chartModalTitle: !!chartModalTitle });
-
-        // --- Lógica para Manter a Posição de Rolagem ---
-        const SCROLL_POS_KEY = 'appScrollPosition';
-
-        // Função para guardar a posição de rolagem
-        function saveScrollPosition() {
-            sessionStorage.setItem(SCROLL_POS_KEY, window.scrollY);
-            console.log('Posição de rolagem salva:', window.scrollY);
-        }
-
-        // Adiciona event listeners para salvar a posição de rolagem antes de recarregar a página
-        // 1. Para formulários
-        document.querySelectorAll('form').forEach(form => {
-            // Exclui o formulário de pesquisa de alerta para evitar rolagem indesejada ao clicar no x
-            if (!form.classList.contains('alert-form')) {
-                form.addEventListener('submit', saveScrollPosition);
-            }
-        });
-        
-        // Adiciona um listener específico para o formulário de alerta, se precisar de comportamento diferente
-        document.querySelectorAll('.alert-form').forEach(form => {
-            form.addEventListener('submit', saveScrollPosition);
-        });
-
-        // Para formulário de filtro de transações
-        document.querySelectorAll('.transaction-filter-form').forEach(form => {
-            form.addEventListener('submit', saveScrollPosition);
-        });
-
-
-        // 2. Para links de paginação e links que recarregam a página (exceto logout, que é intencional ir para o topo)
-        document.querySelectorAll('a').forEach(link => {
-            // Apenas para links que não são ancoras internas (#) e não são o link de logout
-            if (!link.hash && link.href.indexOf(window.location.origin) !== -1 && link.href.indexOf('/logout') === -1) {
-                link.addEventListener('click', saveScrollPosition);
-            }
-        });
-
-        // 3. Restaura a posição de rolagem ao carregar a página
-        const savedScrollPos = sessionStorage.getItem(SCROLL_POS_KEY);
-        if (savedScrollPos) {
-            window.scrollTo(0, parseInt(savedScrollPos));
-            sessionStorage.removeItem(SCROLL_POS_KEY); // Limpa para não restaurar em futuras navegações
-            console.log('Posição de rolagem restaurada para:', savedScrollPos);
-        }
-        // --- Fim da Lógica para Manter a Posição de Rolagem ---
-
-
-        // Função para mostrar o indicador de carregamento dentro do modal
-        function showLoadingIndicatorModal() {
-            modalHistoricalChartDiv.innerHTML = `
-                <div class="flex flex-col items-center justify-center h-full">
-                    <div class="chart-loader"></div>
-                    <p class="text-gray-600 text-lg mt-4">Carregando dados do gráfico...</p>
-                </div>
-            `;
-        }
-
-        // Função para carregar o gráfico com base no símbolo do ativo
-        function loadGraph(symbol, chartType) {
-            if (!symbol) {
-                console.error('loadGraph: Símbolo do ativo não fornecido.');
-                return;
-            }
-            
-            showLoadingIndicatorModal(); // Mostra o indicador de carregamento no modal
-            console.log(`loadGraph: Carregando gráfico para ${symbol} do tipo ${chartType}`);
-
-            const graphUrl = `/api/historical_prices/${symbol}?type=${chartType}`;
-
-            fetch(graphUrl)
-                .then(response => {
-                    console.log(`loadGraph: Resposta recebida para ${symbol}. Status: ${response.status}`);
-                    return response.json().then(data => {
-                        if (!response.ok) { 
-                            // Se houver uma estrutura de "graph" na resposta de erro (do backend), use-a para o Plotly
-                            if (data.graph) {
-                                Plotly.newPlot('modalHistoricalChart', data.graph.data, data.graph.layout);
-                                console.error('loadGraph: Erro na API do gráfico (dados do backend):', data.error);
-                                // Ajusta o título do modal para indicar o erro
-                                chartModalTitle.textContent = `Erro ao carregar gráfico de ${data.simbolo_buscado || currentModalGraphAssetName}`;
-                                return Promise.reject(new Error("Erro processado pelo Plotly")); 
-                            } else {
-                                // Se não houver 'graph', lança um erro padrão para o .catch()
-                                console.error('loadGraph: Erro de rede ou servidor (sem estrutura de gráfico):', data.error || `Status: ${response.status} ${response.statusText}`);
-                                throw new Error(data.error || `Erro de rede ou servidor: ${response.status} ${response.statusText}`);
-                            }
-                        }
-                        return data; 
-                    });
-                })
-                .then(graphData => {
-                    console.log('loadGraph: Dados do gráfico recebidos com sucesso. Renderizando Plotly.');
-                    Plotly.newPlot('modalHistoricalChart', graphData.data, graphData.layout);
-                    // Define o título do modal com o nome popular do ativo
-                    // O `replace` remove as partes do título que o backend Plotly adiciona por padrão
-                    chartModalTitle.textContent = `Gráfico Histórico de ${graphData.layout.title.text.replace('Preço Histórico de ', '').replace(' (Line)', '').replace(' (Candlestick)', '').replace(' (Area)', '')}`;
-                })
-                .catch(error => {
-                    console.error('loadGraph: Erro final no carregamento do gráfico:', error);
-                    if (error.message !== "Erro processado pelo Plotly") { // Evita mensagem duplicada se o erro foi tratado acima
-                        modalHistoricalChartDiv.innerHTML = `
-                            <p class="text-red-600 text-center text-lg mt-4">Erro ao carregar o gráfico: ${error.message || error}.</p>
-                            <p class="text-red-500 text-center text-sm mt-1">Por favor, verifique o console do navegador (F12) para mais detalhes ou tente novamente.</p>
-                        `;
-                        chartModalTitle.textContent = `Erro ao carregar gráfico para ${currentModalGraphAssetName || 'Ativo Desconhecido'}`;
-                    }
-                });
-        }
-
-        // Função para abrir o modal do gráfico
-        function openGraphModal(symbol, assetName) {
-            console.log(`openGraphModal: Chamado com símbolo ${symbol}, nome ${assetName}`);
-            currentModalGraphSymbol = symbol;
-            currentModalGraphAssetName = assetName;
-            if (chartModal) { // Verifica se o modal foi encontrado
-                chartModal.style.display = 'flex'; // Exibe o modal
-                console.log('openGraphModal: Modal exibido.');
-                loadGraph(currentModalGraphSymbol, modalChartTypeSelect.value); // Carrega o gráfico
-            } else {
-                console.error('openGraphModal: Elemento chartModal não encontrado. O modal não pode ser aberto.');
-            }
-        }
-
-        // Função para fechar o modal do gráfico
-        function closeGraphModal() {
-            console.log('closeGraphModal: Fechando modal.');
-            if (chartModal) { // Verifica se o modal foi encontrado
-                chartModal.style.display = 'none'; // Esconde o modal
-                modalHistoricalChartDiv.innerHTML = '<div class="chart-loader"></div>'; // Limpa e mostra loader novamente para próxima abertura
-                currentModalGraphSymbol = null; // Reseta o símbolo
-                currentModalGraphAssetName = '';
-            }
-        }
-
-        // Adiciona event listeners aos botões "Gráfico" na tabela de investimentos atuais
         document.querySelectorAll('.show-chart-btn').forEach(button => {
-            console.log('DOMContentLoaded: Botão Gráfico encontrado, adicionando listener:', button);
             button.addEventListener('click', function() {
-                console.log('Click event: Botão Gráfico clicado!');
                 const symbol = this.dataset.symbol;
                 const assetName = this.dataset.assetName;
-                openGraphModal(symbol, assetName);
+
+                chartModalTitle.textContent = `Gráfico Histórico de ${assetName} (${symbol})`;
+                modalHistoricalChart.innerHTML = '<div class="chart-loader mx-auto"></div>'; // Mostra o loader
+                chartModal.classList.remove('hidden'); // Exibe o modal
+
+                // Fetch data for historical chart
+                fetch(`/get_historical_chart_data/${symbol}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        modalHistoricalChart.innerHTML = ''; // Limpa o loader
+                        if (data.plot_json) {
+                            var plotData = JSON.parse(data.plot_json);
+                            Plotly.newPlot('modalHistoricalChart', plotData.data, plotData.layout);
+                        } else {
+                            modalHistoricalChart.innerHTML = '<p class="text-center text-gray-500">Não foi possível carregar dados históricos para este ativo.</p>';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erro ao buscar dados do gráfico histórico:', error);
+                        modalHistoricalChart.innerHTML = `<p class="text-center text-red-500">Erro ao carregar o gráfico: ${error.message}.</p>`;
+                    });
             });
         });
 
-        // Listener para o dropdown de tipo de gráfico dentro do modal
-        if (modalChartTypeSelect) {
-            modalChartTypeSelect.addEventListener('change', function() {
-                console.log('modalChartTypeSelect: Tipo de gráfico alterado para:', this.value);
-                if (currentModalGraphSymbol) { // Se houver um ativo sendo visualizado no modal
-                    loadGraph(currentModalGraphSymbol, this.value); // Recarrega o gráfico com o novo tipo para o mesmo ativo
-                } else {
-                    console.warn('modalChartTypeSelect: Nenhuma símbolo de ativo selecionado para recarregar o gráfico.');
-                }
-            });
-        } else {
-            console.error('DOMContentLoaded: Elemento modal_chart_type_select não encontrado.');
-        }
+        closeChartModalBtn.addEventListener('click', function() {
+            chartModal.classList.add('hidden'); // Esconde o modal
+            modalHistoricalChart.innerHTML = ''; // Limpa o conteúdo do gráfico
+        });
 
-        // Fechar o modal clicando no botão X
-        if (closeChartModalBtn) {
-            closeChartModalBtn.addEventListener('click', closeGraphModal);
-        } else {
-            console.error('DOMContentLoaded: Elemento closeChartModalBtn não encontrado.');
-        }
-
-        // Fechar o modal clicando fora do conteúdo do modal
-        window.onclick = function(event) {
-            if (event.target == chartModal) {
-                closeGraphModal();
+        // Fecha o modal se clicar fora do conteúdo
+        chartModal.addEventListener('click', function(event) {
+            if (event.target === chartModal) {
+                chartModal.classList.add('hidden');
+                modalHistoricalChart.innerHTML = '';
             }
-        }
+        });
     });
 </script>
 {% endblock %}
