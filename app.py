@@ -116,11 +116,23 @@ def datetimeformat(value, format_string='%Y-%m-%d'):
         dt = value
     elif isinstance(value, datetime.date):
         dt = datetime.datetime(value.year, value.month, value.day)
+    elif isinstance(value, datetime.time): # Add handling for datetime.time objects
+        # For time objects, return a formatted string directly
+        return value.strftime(format_string)
     elif value is None:
         return 'N/A'
     else:
         try:
-            dt = datetime.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+            # Handle psycopg2.time objects which might not be directly datetime.time
+            if isinstance(value, datetime.timedelta):
+                total_seconds = int(value.total_seconds())
+                hours, remainder = divmod(total_seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                # Construct a time object for consistent formatting
+                dt = datetime.time(hours, minutes, seconds)
+                return dt.strftime(format_string)
+            else:
+                dt = datetime.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
         except ValueError:
             return str(value)
     return dt.strftime(format_string)
@@ -1397,7 +1409,15 @@ def edit_transaction(transaction_id):
             else:
                 transaction['hora_transacao_formatted'] = None
             # Tenta obter o nome amigável para exibição em caso de erro
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
+            # Prioriza o valor do campo manual se presente, senão do select
+            if request.form.get('simbolo_ativo_manual_edit'):
+                transaction['simbolo_ativo_display'] = request.form.get('simbolo_ativo_manual_edit')
+                transaction['simbolo_ativo'] = request.form.get('simbolo_ativo_manual_edit') # Update the actual symbol for consistency
+            else:
+                transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
+                transaction['simbolo_ativo'] = request.form.get('simbolo_ativo')
+
+
             return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
         hora_transacao_str = request.form.get('hora_transacao')
@@ -1409,10 +1429,30 @@ def edit_transaction(transaction_id):
                 flash('Formato de hora inválido. Use HH:MM.', 'danger')
                 transaction['data_transacao_formatted'] = data_transacao_str
                 transaction['hora_transacao_formatted'] = hora_transacao_str
-                transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
+                if request.form.get('simbolo_ativo_manual_edit'):
+                    transaction['simbolo_ativo_display'] = request.form.get('simbolo_ativo_manual_edit')
+                    transaction['simbolo_ativo'] = request.form.get('simbolo_ativo_manual_edit')
+                else:
+                    transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
+                    transaction['simbolo_ativo'] = request.form.get('simbolo_ativo')
                 return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
-        simbolo_ativo = request.form['simbolo_ativo']
+        # Lógica para obter o símbolo ativo do formulário de edição
+        simbolo_ativo = request.form.get('simbolo_ativo') # Do select principal
+        simbolo_ativo_manual_edit = request.form.get('simbolo_ativo_manual_edit') # Do campo manual, se visível
+
+        final_simbolo_para_processamento = simbolo_ativo
+        if simbolo_ativo == 'OUTRO_EDIT' and simbolo_ativo_manual_edit:
+            final_simbolo_para_processamento = simbolo_ativo_manual_edit
+
+        if not final_simbolo_para_processamento or final_simbolo_para_processamento.strip() == '':
+            flash('Por favor, selecione ou digite um símbolo para o ativo.', 'danger')
+            transaction['data_transacao_formatted'] = data_transacao_str
+            transaction['hora_transacao_formatted'] = hora_transacao_str
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.Sget(final_simbolo_para_processamento, final_simbolo_para_processamento) # Tentativa de preencher
+            return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
+
+
         quantidade = request.form['quantidade']
         preco_unitario = request.form['preco_unitario']
         tipo_operacao = request.form['tipo_operacao']
@@ -1427,7 +1467,7 @@ def edit_transaction(transaction_id):
             flash('Quantidade, Preço Unitário ou Custos/Taxas devem ser números válidos.', 'danger')
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
             # Passa os valores do formulário para o template para preencher novamente
             transaction['quantidade'] = quantidade
             transaction['preco_unitario'] = preco_unitario
@@ -1439,19 +1479,19 @@ def edit_transaction(transaction_id):
             flash('Quantidade e Preço Unitário devem ser maiores que zero.', 'danger')
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
             transaction['quantidade'] = quantidade
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
             transaction['observacoes'] = observacoes
             return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
-        simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo.upper(), simbolo_ativo)
-        if simbolo_ativo_yf == simbolo_ativo and \
-           not any(c in simbolo_ativo for c in ['^', '-', '=']) and \
-           not any(simbolo_ativo.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
-            if 4 <= len(simbolo_ativo) <= 6 and simbolo_ativo.isalnum():
-                simbolo_ativo_yf = f"{simbolo_ativo.upper()}.SA"
+        simbolo_ativo_yf = SYMBOL_MAPPING.get(final_simbolo_para_processamento.upper(), final_simbolo_para_processamento)
+        if simbolo_ativo_yf == final_simbolo_para_processamento and \
+           not any(c in final_simbolo_para_processamento for c in ['^', '-', '=']) and \
+           not any(final_simbolo_para_processamento.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
+            if 4 <= len(final_simbolo_para_processamento) <= 6 and final_simbolo_para_processamento.isalnum():
+                simbolo_ativo_yf = f"{final_simbolo_para_processamento.upper()}.SA"
         simbolo_ativo_yf = simbolo_ativo_yf.upper()
 
         try:
@@ -1474,7 +1514,7 @@ def edit_transaction(transaction_id):
             print(f"Erro ao atualizar transação: {e}")
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
             transaction['quantidade'] = quantidade
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
