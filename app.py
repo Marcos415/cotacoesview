@@ -497,6 +497,11 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
 def buscar_alertas(user_id):
     alertas = []
     try:
+        # Adiciona verificação explícita da existência da tabela antes de consultar
+        if not check_table_exists('alertas'):
+            print("AVISO: Tabela 'alertas' não existe ao tentar buscar alertas. Retornando lista vazia.")
+            return [] # Retorna lista vazia se a tabela não existe
+            
         with DBConnectionManager(dictionary=True) as cursor_db:
             # Garante que 'alertas' é acessado em minúsculas
             sql = 'SELECT id, user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao, data_disparo FROM alertas WHERE user_id = %s ORDER BY data_criacao DESC'
@@ -641,6 +646,7 @@ def calcular_posicoes_carteira(user_id):
                 simbolo = transacao['simbolo_ativo']
                 tipo = transacao['tipo_operacao']
 
+                # Convert Decimal to float for calculations if necessary, or use Decimal consistently
                 quantidade = float(transacao['quantidade'])
                 preco_unitario = float(transacao['preco_unitario'])
                 custos_taxas = float(transacao['custos_taxas'])
@@ -804,6 +810,7 @@ def create_tables_if_not_exist():
                     );
                 """)
                 print("DEBUG: Comando SQL para 'users' executado.")
+                cursor_db.connection.commit() # Commit explícito
 
                 # Tabela 'transacoes' (depende de 'users')
                 print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (PostgreSQL)...")
@@ -824,6 +831,7 @@ def create_tables_if_not_exist():
                     );
                 """)
                 print("DEBUG: Comando SQL para 'transacoes' executado.")
+                cursor_db.connection.commit() # Commit explícito
 
                 # Tabela 'alertas' (depende de 'users') -- Melhorando a resiliência para PostgreSQL
                 alertas_table_name = "alertas" # Nome da tabela que queremos que o PG veja em minúsculas
@@ -832,13 +840,15 @@ def create_tables_if_not_exist():
                 # Tenta dropar versões maiúsculas ou com aspas que podem ter sido criadas anteriormente por engano
                 try:
                     cursor_db.execute(f'DROP TABLE IF EXISTS "{alertas_table_name.upper()}" CASCADE;')
-                    print(f"DEBUG: DROP TABLE IF EXISTS \"{alertas_table_name.upper()}\" CASCADE executado (ignora se não existir).")
+                    cursor_db.connection.commit() # Commit explícito após DROP
+                    print(f"DEBUG: DROP TABLE IF EXISTS \"{alertas_table_name.upper()}\" CASCADE executado e commitado (ignora se não existir).")
                 except Exception as drop_err:
                     print(f"AVISO: Erro ao tentar dropar tabela maiúscula '{alertas_table_name.upper()}': {drop_err}. Ignorado se não existir.")
 
                 try:
                     cursor_db.execute(f'DROP TABLE IF EXISTS {alertas_table_name} CASCADE;') # Dropar a versão minúscula/padrão
-                    print(f"DEBUG: DROP TABLE IF EXISTS {alertas_table_name} CASCADE executado (ignora se não existir).")
+                    cursor_db.connection.commit() # Commit explícito após DROP
+                    print(f"DEBUG: DROP TABLE IF EXISTS {alertas_table_name} CASCADE executado e commitado (ignora se não existir).")
                 except Exception as drop_err:
                     print(f"AVISO: Erro ao tentar dropar tabela minúscula '{alertas_table_name}': {drop_err}. Ignorado se não existir.")
 
@@ -858,7 +868,8 @@ def create_tables_if_not_exist():
                 """
                 print(f"DEBUG: Executando SQL CREATE TABLE para '{alertas_table_name}':\n{sql_create_alertas}")
                 cursor_db.execute(sql_create_alertas)
-                print(f"DEBUG: Comando SQL para '{alertas_table_name}' executado.")
+                cursor_db.connection.commit() # Commit explícito após CREATE
+                print(f"DEBUG: Comando SQL para '{alertas_table_name}' executado e commitado.")
 
 
                 # Tabela 'admin_audit_logs'
@@ -876,6 +887,7 @@ def create_tables_if_not_exist():
                     );
                 """)
                 print("DEBUG: Comando SQL para 'admin_audit_logs' executado.")
+                cursor_db.connection.commit() # Commit explícito
 
             else: # MySQL (Keep as is as MySQL isn't the problem here)
                 # Tabela 'users'
@@ -893,6 +905,7 @@ def create_tables_if_not_exist():
                     );
                 """)
                 print("DEBUG: Comando SQL para 'users' executado.")
+                cursor_db.connection.commit() # Commit explícito
 
                 print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (MySQL)...")
                 cursor_db.execute("""
@@ -912,6 +925,7 @@ def create_tables_if_not_exist():
                     );
                 """)
                 print("DEBUG: Comando SQL para 'transacoes' executado.")
+                cursor_db.connection.commit() # Commit explícito
 
                 print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS alertas (MySQL)...") # NOME AGORA É 'alertas'
                 cursor_db.execute("""
@@ -928,6 +942,7 @@ def create_tables_if_not_exist():
                     );
                 """)
                 print("DEBUG: Comando SQL para 'alertas' executado.")
+                cursor_db.connection.commit() # Commit explícito
 
                 print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (MySQL)...")
                 cursor_db.execute("""
@@ -943,6 +958,7 @@ def create_tables_if_not_exist():
                     );
                 """)
                 print("DEBUG: Comando SQL para 'admin_audit_logs' executado.")
+                cursor_db.connection.commit() # Commit explícito
             print("DEBUG: Todas as operações CREATE TABLE IF NOT EXISTS foram enviadas ao banco de dados.")
     except Exception as e:
         print(f"ERRO CRÍTICO: Falha ao tentar verificar/criar tabelas: {e}")
@@ -1544,7 +1560,7 @@ def edit_transaction(transaction_id):
             transaction['hora_transacao_formatted'] = hora_transacao_str
             transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
             # Passa os valores do formulário para o template para preencher novamente
-            transaction['quantidade'] = quantidade # Corrected: used `quantity` previously, now `quantidade`
+            transaction['quantidade'] = quantidade
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
             transaction['observacoes'] = observacoes
@@ -1555,7 +1571,7 @@ def edit_transaction(transaction_id):
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
             transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
-            transaction['quantidade'] = quantidade # Corrected
+            transaction['quantidade'] = quantidade
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
             transaction['observacoes'] = observacoes
@@ -1590,7 +1606,7 @@ def edit_transaction(transaction_id):
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
             transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
-            transaction['quantidade'] = quantidade # Corrected
+            transaction['quantidade'] = quantidade
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
             transaction['observacoes'] = observacoes
@@ -1982,4 +1998,3 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     print(f"DEBUG: Iniciando Flask app em host 0.0.0.0, porta {port}")
     app.run(debug=True, host='0.0.0.0', port=port)
-
