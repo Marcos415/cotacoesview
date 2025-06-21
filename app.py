@@ -498,13 +498,13 @@ def buscar_alertas(user_id):
     alertas = []
     try:
         with DBConnectionManager(dictionary=True) as cursor_db:
-            sql = "SELECT id, user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao, data_disparo FROM alerts WHERE user_id = %s ORDER BY data_criacao DESC"
+            sql = "SELECT id, user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao, data_disparo FROM alertas WHERE user_id = %s ORDER BY data_criacao DESC"
             cursor_db.execute(sql, (user_id,))
             alertas = cursor_db.fetchall()
     except Exception as err:
-        # Verifica se o erro é a tabela 'alerts' não existir
-        if "relation \"alerts\" does not exist" in str(err).lower() or "undefined_table" in str(err).lower():
-            print(f"AVISO: Tabela 'alerts' não existe, retornando lista vazia de alertas. Erro: {err}")
+        # Verifica se o erro é a tabela 'alertas' não existir
+        if "relation \"alertas\" does not exist" in str(err).lower() or "undefined_table" in str(err).lower():
+            print(f"AVISO: Tabela 'alertas' não existe, retornando lista vazia de alertas. Erro: {err}")
             # Não lança o erro, permite que a aplicação continue
         else:
             print(f"ERRO ao buscar alertas de preço: {err}")
@@ -809,10 +809,10 @@ def create_tables_if_not_exist():
                 """)
                 print("DEBUG: Comando SQL para 'transacoes' executado.")
 
-                # Tabela 'alerts' (depende de 'users')
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS alerts (PostgreSQL)...")
+                # Tabela 'alertas' (depende de 'users') -- NOME AGORA É 'alertas'
+                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS alertas (PostgreSQL)...")
                 cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS alerts (
+                    CREATE TABLE IF NOT EXISTS alertas (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         simbolo_ativo VARCHAR(20) NOT NULL,
@@ -824,7 +824,7 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Comando SQL para 'alerts' executado.")
+                print("DEBUG: Comando SQL para 'alertas' executado.")
 
                 # Tabela 'admin_audit_logs'
                 print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (PostgreSQL)...")
@@ -878,9 +878,9 @@ def create_tables_if_not_exist():
                 """)
                 print("DEBUG: Comando SQL para 'transacoes' executado.")
 
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS alerts (MySQL)...")
+                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS alertas (MySQL)...") # NOME AGORA É 'alertas'
                 cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS alerts (
+                    CREATE TABLE IF NOT EXISTS alertas (
                         id INT AUTO_INCREMENT PRIMARY KEY,
                         user_id INT NOT NULL,
                         simbolo_ativo VARCHAR(20) NOT NULL,
@@ -892,7 +892,7 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Comando SQL para 'alerts' executado.")
+                print("DEBUG: Comando SQL para 'alertas' executado.")
 
                 print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (MySQL)...")
                 cursor_db.execute("""
@@ -1485,7 +1485,7 @@ def edit_transaction(transaction_id):
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
             transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
-            transaction['quantidade'] = quantidade
+            transaction['quantidade'] = quantity
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
             transaction['observacoes'] = observacoes
@@ -1520,7 +1520,7 @@ def edit_transaction(transaction_id):
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
             transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
-            transaction['quantidade'] = quantidade
+            transaction['quantidade'] = quantity
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
             transaction['observacoes'] = observacoes
@@ -1682,7 +1682,7 @@ def admin_audit_logs():
                         try:
                             log['details_parsed'] = json.loads(log['details'])
                         except json.JSONDecodeError:
-                            log['details_parsed'] = {'error': 'Invalid JSON'}
+                            log['details_parsed'] = {}
                 else:
                     log['details_parsed'] = {}
     except Exception as e:
@@ -1779,7 +1779,7 @@ def adicionar_alerta():
     try:
         with DBConnectionManager() as cursor_db:
             sql = """
-            INSERT INTO alerts (user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao)
+            INSERT INTO alertas (user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao)
             VALUES (%s, %s, %s, %s, %s, %s)
             """
             cursor_db.execute(sql, (user_id, simbolo_ativo_yf, preco_alvo, tipo_alerta, 'ATIVO', datetime.datetime.now()))
@@ -1801,7 +1801,7 @@ def excluir_alerta():
 
     try:
         with DBConnectionManager() as cursor_db:
-            cursor_db.execute("DELETE FROM alerts WHERE id = %s AND user_id = %s", (alert_id, user_id))
+            cursor_db.execute("DELETE FROM alertas WHERE id = %s AND user_id = %s", (alert_id, user_id))
             if cursor_db.rowcount > 0:
                 flash('Alerta de preço excluído com sucesso.', 'success')
             else:
@@ -1892,10 +1892,17 @@ if __name__ == '__main__':
         else:
             print("ERRO: Tabela 'transacoes' NÃO EXISTE após a tentativa de criação!")
 
-        if check_table_exists('alerts'):
-            print("DEBUG: Tabela 'alerts' confirmada após a tentativa de criação.")
+        # O problema aqui é que se a tabela 'alerts' foi criada antes com esse nome,
+        # e agora estamos tentando criar 'alertas', teremos duas tabelas ou um erro.
+        # A solução mais robusta seria renomear a tabela 'alerts' existente para 'alertas'
+        # ou dropar a tabela 'alerts' se ela não tiver dados importantes.
+        # Para simplificar agora, e dado que você ainda não conseguiu adicionar alertas,
+        # vamos focar em garantir que 'alertas' seja criada e usada corretamente.
+        # Se você já tiver criado 'alerts' e tiver dados, precisaremos de um passo extra para migrar/renomear.
+        if check_table_exists('alertas'): # Mudado para 'alertas'
+            print("DEBUG: Tabela 'alertas' confirmada após a tentativa de criação.")
         else:
-            print("ERRO: Tabela 'alerts' NÃO EXISTE após a tentativa de criação!")
+            print("ERRO: Tabela 'alertas' NÃO EXISTE após a tentativa de criação!")
         
         if check_table_exists('admin_audit_logs'):
             print("DEBUG: Tabela 'admin_audit_logs' confirmada após a tentativa de criação.")
