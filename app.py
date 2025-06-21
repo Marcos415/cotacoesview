@@ -498,16 +498,14 @@ def buscar_alertas(user_id):
     alertas = []
     try:
         with DBConnectionManager(dictionary=True) as cursor_db:
-            sql = "SELECT id, user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao, data_disparo FROM alertas WHERE user_id = %s ORDER BY data_criacao DESC"
+            sql = 'SELECT id, user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao, data_disparo FROM alertas WHERE user_id = %s ORDER BY data_criacao DESC'
             cursor_db.execute(sql, (user_id,))
             alertas = cursor_db.fetchall()
     except Exception as err:
-        # Verifica se o erro é a tabela 'alertas' não existir
-        if "relation \"alertas\" does not exist" in str(err).lower() or "undefined_table" in str(err).lower():
-            print(f"AVISO: Tabela 'alertas' não existe, retornando lista vazia de alertas. Erro: {err}")
-            # Não lança o erro, permite que a aplicação continue
-        else:
-            print(f"ERRO ao buscar alertas de preço: {err}")
+        # AVISO: A tabela 'alertas' pode não existir na primeira execução ou após um reset do DB.
+        # Imprime o erro, mas não lança, permitindo que a app continue a funcionar sem alertas.
+        # Isso é esperado até que o 'create_tables_if_not_exist' garanta a criação.
+        print(f"AVISO: Erro ao buscar alertas: {err}")
     return alertas
 
 # --- Função para obter o histórico de preços com Cache (usado por _get_current_price_yfinance e predictor_model) ---
@@ -756,7 +754,8 @@ def check_table_exists(table_name):
     try:
         with DBConnectionManager(dictionary=True) as cursor_db:
             if DB_TYPE == 'postgresql':
-                cursor_db.execute(f"SELECT to_regclass('{table_name}') IS NOT NULL AS exists_table;")
+                # Use quotes for exact case matching if needed, though unquoted are lowercased by default
+                cursor_db.execute(f"SELECT to_regclass('public.\"{table_name}\"') IS NOT NULL AS exists_table;")
             else: # MySQL
                 cursor_db.execute(f"SELECT COUNT(*) AS exists_table FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '{table_name}';")
             result = cursor_db.fetchone()
@@ -809,10 +808,20 @@ def create_tables_if_not_exist():
                 """)
                 print("DEBUG: Comando SQL para 'transacoes' executado.")
 
-                # Tabela 'alertas' (depende de 'users') -- NOME AGORA É 'alertas'
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS alertas (PostgreSQL)...")
-                cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS alertas (
+                # Tabela 'alertas' (depende de 'users') -- Força recriação se necessário
+                alertas_table_name = "alertas" # Define o nome da tabela aqui para consistência
+                print(f"DEBUG: Verificando e garantindo tabela '{alertas_table_name}' (PostgreSQL)...")
+                
+                # Dropa a tabela se ela já existir, para garantir que a recriação funcione
+                # Isso é um fallback agressivo para lidar com estados inconsistentes
+                try:
+                    cursor_db.execute(f'DROP TABLE IF EXISTS "{alertas_table_name}" CASCADE;')
+                    print(f"DEBUG: DROP TABLE IF EXISTS \"{alertas_table_name}\" CASCADE executado.")
+                except Exception as drop_err:
+                    print(f"AVISO: Erro ao tentar dropar tabela '{alertas_table_name}': {drop_err}. Continuar com CREATE.")
+
+                sql_create_alertas = f"""
+                    CREATE TABLE "{alertas_table_name}" (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         simbolo_ativo VARCHAR(20) NOT NULL,
@@ -823,8 +832,11 @@ def create_tables_if_not_exist():
                         data_disparo TIMESTAMP WITH TIME ZONE,
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
-                """)
-                print("DEBUG: Comando SQL para 'alertas' executado.")
+                """
+                print(f"DEBUG: Executando SQL CREATE TABLE para '{alertas_table_name}':\n{sql_create_alertas}")
+                cursor_db.execute(sql_create_alertas)
+                print(f"DEBUG: Comando SQL para '{alertas_table_name}' executado.")
+
 
                 # Tabela 'admin_audit_logs'
                 print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (PostgreSQL)...")
@@ -1892,14 +1904,7 @@ if __name__ == '__main__':
         else:
             print("ERRO: Tabela 'transacoes' NÃO EXISTE após a tentativa de criação!")
 
-        # O problema aqui é que se a tabela 'alerts' foi criada antes com esse nome,
-        # e agora estamos tentando criar 'alertas', teremos duas tabelas ou um erro.
-        # A solução mais robusta seria renomear a tabela 'alerts' existente para 'alertas'
-        # ou dropar a tabela 'alerts' se ela não tiver dados importantes.
-        # Para simplificar agora, e dado que você ainda não conseguiu adicionar alertas,
-        # vamos focar em garantir que 'alertas' seja criada e usada corretamente.
-        # Se você já tiver criado 'alerts' e tiver dados, precisaremos de um passo extra para migrar/renomear.
-        if check_table_exists('alertas'): # Mudado para 'alertas'
+        if check_table_exists('alertas'):
             print("DEBUG: Tabela 'alertas' confirmada após a tentativa de criação.")
         else:
             print("ERRO: Tabela 'alertas' NÃO EXISTE após a tentativa de criação!")
