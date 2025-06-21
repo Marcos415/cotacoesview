@@ -496,17 +496,20 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
 # --- Nova Função para Buscar Alertas de Preço ---
 def buscar_alertas(user_id):
     alertas = []
+    print(f"DEBUG: buscar_alertas({user_id}) - Iniciando busca de alertas.")
     try:
         # Adiciona verificação explícita da existência da tabela antes de consultar
         if not check_table_exists('alertas'):
-            print("AVISO: Tabela 'alertas' não existe ao tentar buscar alertas. Retornando lista vazia.")
+            print("DEBUG: Tabela 'alertas' NÃO EXISTE ao tentar buscar alertas. Retornando lista vazia.")
             return [] # Retorna lista vazia se a tabela não existe
             
         with DBConnectionManager(dictionary=True) as cursor_db:
             # Garante que 'alertas' é acessado em minúsculas
             sql = 'SELECT id, user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao, data_disparo FROM alertas WHERE user_id = %s ORDER BY data_criacao DESC'
+            print(f"DEBUG: buscar_alertas({user_id}) - Executando query: {sql}")
             cursor_db.execute(sql, (user_id,))
             alertas = cursor_db.fetchall()
+            print(f"DEBUG: buscar_alertas({user_id}) - Alertas encontrados: {len(alertas)}.")
     except Exception as err:
         # AVISO: A tabela 'alertas' pode não existir na primeira execução ou após um reset do DB.
         # Imprime o erro, mas não lança, permitindo que a app continue a funcionar sem alertas.
@@ -526,17 +529,21 @@ def get_historical_prices_yfinance_cached(simbolo, period, interval):
     cache_key = (final_simbolo_to_fetch, period, interval)
 
     if is_cache_fresh(market_data_cache, cache_key, MARKET_DATA_CACHE_TTL):
+        print(f"DEBUG: CACHE HIT para dados históricos de {final_simbolo_to_fetch}")
         return market_data_cache[cache_key]['data'].copy()
 
     try:
+        print(f"DEBUG: Buscando dados históricos para {final_simbolo_to_fetch} no Yahoo Finance...")
         ticker = yf.Ticker(final_simbolo_to_fetch)
         df_hist = ticker.history(period=period, interval=interval)
         if not df_hist.empty:
             market_data_cache[cache_key] = {'data': df_hist, 'timestamp': datetime.datetime.now()}
+            print(f"DEBUG: Dados históricos para {final_simbolo_to_fetch} OBTIDOS e cacheados.")
             return df_hist.copy()
+        print(f"DEBUG: DataFrame histórico VAZIO para {final_simbolo_to_fetch}")
         return pd.DataFrame()
     except Exception as e:
-        print(f"Erro ao buscar dados históricos para {final_simbolo_to_fetch}: {e}")
+        print(f"ERRO: ao buscar dados históricos para {final_simbolo_to_fetch}: {e}")
         return pd.DataFrame()
 
 
@@ -552,13 +559,16 @@ def _get_current_price_yfinance(simbolo):
     cache_key = (final_simbolo_to_fetch, "1d", "1m")
 
     if is_cache_fresh(market_data_cache, cache_key, MARKET_DATA_CACHE_TTL):
+        print(f"DEBUG: CACHE HIT para preço atual de {final_simbolo_to_fetch}")
         return market_data_cache[cache_key]['data']
 
     try:
+        print(f"DEBUG: Buscando preço atual para {final_simbolo_to_fetch} no Yahoo Finance...")
         ticker = yf.Ticker(final_simbolo_to_fetch)
         hist = ticker.history(period="1d", interval="1m")
 
         if hist.empty:
+            print(f"DEBUG: Histórico 1m vazio para {final_simbolo_to_fetch}, tentando 5d/1d.")
             hist = ticker.history(period="5d", interval="1d")
 
         if not hist.empty:
@@ -576,13 +586,14 @@ def _get_current_price_yfinance(simbolo):
                 return None
 
             market_data_cache[cache_key] = {'data': float(latest_price), 'timestamp': datetime.datetime.now()}
+            print(f"DEBUG: Preço atual para {final_simbolo_to_fetch} OBTIDO: {latest_price}")
             return float(latest_price)
         else:
             print(f"DEBUG: Cotação para {final_simbolo_to_fetch} não encontrada ou dados indisponíveis após múltiplas tentativas.")
             return None
 
     except Exception as e:
-        print(f"DEBUG: Erro ao buscar cotação atual para {final_simbolo_to_fetch}: {e}")
+        print(f"DEBUG: ERRO ao buscar cotação atual para {final_simbolo_to_fetch}: {e}")
         return None
 
 
@@ -598,22 +609,27 @@ def get_predicted_price_for_display(simbolo):
     cache_key = simbolo_yf_for_prediction
 
     if is_cache_fresh(prediction_cache, cache_key, PREDICTION_CACHE_TTL):
+        print(f"DEBUG: CACHE HIT para previsão de {simbolo_yf_for_prediction}")
         return prediction_cache[cache_key]['data']
 
     predicted_price = None
-
+    print(f"DEBUG: Gerando previsão para {simbolo_yf_for_prediction}...")
     predicted_price = train_and_predict_price(simbolo_yf_for_prediction, get_historical_prices_yfinance_cached)
 
     if predicted_price is not None:
         prediction_cache[cache_key] = {'data': float(predicted_price), 'timestamp': datetime.datetime.now()}
+        print(f"DEBUG: Previsão para {simbolo_yf_for_prediction} OBTIDA: {predicted_price}")
         return float(predicted_price)
+    print(f"DEBUG: Nenhuma previsão gerada para {simbolo_yf_for_prediction}")
     return None
 
 # --- Função para Calcular Preço Médio e Quantidade Total na Carteira (com Cache) ---
 def calcular_posicoes_carteira(user_id):
     cache_key = user_id
+    print(f"DEBUG: calcular_posicoes_carteira({user_id}) - Iniciando cálculo.")
 
     if is_cache_fresh(portfolio_cache, cache_key, PORTFOLIO_CACHE_TTL):
+        print(f"DEBUG: CACHE HIT para posições da carteira de {user_id}")
         return portfolio_cache[cache_key]['data']
 
     posicoes = {}
@@ -637,8 +653,10 @@ def calcular_posicoes_carteira(user_id):
             ORDER BY
                 simbolo_ativo, data_transacao ASC, hora_transacao ASC;
             """
+            print(f"DEBUG: calcular_posicoes_carteira - Buscando transações para user_id {user_id}...")
             cursor_db.execute(sql_transacoes, (user_id,))
             todas_transacoes = cursor_db.fetchall()
+            print(f"DEBUG: calcular_posicoes_carteira - {len(todas_transacoes)} transações encontradas.")
 
             estado_ativo = {}
 
@@ -646,7 +664,6 @@ def calcular_posicoes_carteira(user_id):
                 simbolo = transacao['simbolo_ativo']
                 tipo = transacao['tipo_operacao']
 
-                # Convert Decimal to float for calculations if necessary, or use Decimal consistently
                 quantidade = float(transacao['quantidade'])
                 preco_unitario = float(transacao['preco_unitario'])
                 custos_taxas = float(transacao['custos_taxas'])
@@ -660,7 +677,6 @@ def calcular_posicoes_carteira(user_id):
                 elif tipo == 'VENDA':
                     if estado_ativo[simbolo]['quantidade'] > 0:
                         if quantidade <= estado_ativo[simbolo]['quantidade']:
-                            # Calcula o custo médio antes da venda
                             custo_medio_atual = estado_ativo[simbolo]['custo_acumulado'] / estado_ativo[simbolo]['quantidade']
                             custo_das_vendidas = quantidade * custo_medio_atual
 
@@ -683,11 +699,11 @@ def calcular_posicoes_carteira(user_id):
                     preco_atual = _get_current_price_yfinance(simbolo)
                     preco_previsto = get_predicted_price_for_display(simbolo)
 
-                    lucro_prejuizo_nao_realizado_individual = None
+                    lucro_prejuizo_nao_realizado_individual = 0.0
                     if preco_atual is not None:
                         lucro_prejuizo_nao_realizado_individual = (preco_atual - preco_medio) * float(dados_posicao['quantidade'])
                     else:
-                        lucro_prejuizo_nao_realizado_individual = 0.0
+                        print(f"DEBUG: calcular_posicoes_carteira - Preço atual para {simbolo} é None.")
                     
                     valor_total_ativo = (preco_atual * dados_posicao['quantidade']) if preco_atual is not None else 0.0
 
@@ -696,11 +712,11 @@ def calcular_posicoes_carteira(user_id):
                         'preco_medio': preco_medio,
                         'preco_atual': preco_atual,
                         'preco_previsto': preco_previsto,
-                        'valor_atual': valor_total_ativo, # Used by pie chart
+                        'valor_atual': valor_total_ativo, 
                         'lucro_prejuizo_nao_realizado': lucro_prejuizo_nao_realizado_individual,
-                        'nome_popular': REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo.replace('.SA', '').upper()), # Add nome_popular
-                        'quantidade_total': dados_posicao['quantidade'], # For clarity in the template (already exists as 'quantidade')
-                        'valor_total_ativo': valor_total_ativo # For clarity in the template
+                        'nome_popular': REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo.replace('.SA', '').upper()), 
+                        'quantidade_total': dados_posicao['quantidade'], 
+                        'valor_total_ativo': valor_total_ativo 
                     }
                     total_valor_carteira += posicoes[simbolo]['valor_atual']
 
@@ -709,7 +725,7 @@ def calcular_posicoes_carteira(user_id):
                             total_lucro_nao_realizado += lucro_prejuizo_nao_realizado_individual
                         else:
                             total_prejuizo_nao_realizado += lucro_prejuizo_nao_realizado_individual
-
+            print(f"DEBUG: calcular_posicoes_carteira - Posições calculadas: {posicoes}")
     except Exception as e:
         print(f"ERRO inesperado ao calcular posições da carteira: {e}")
         return {}, 0.0, 0.0, 0.0
@@ -718,16 +734,19 @@ def calcular_posicoes_carteira(user_id):
         'data': (posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado),
         'timestamp': datetime.datetime.now()
     }
+    print(f"DEBUG: calcular_posicoes_carteira - Cache da carteira atualizado para {user_id}.")
     return posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado
 
 # --- Funções para Notícias ---
 def fetch_news(query):
     cache_key = query
+    print(f"DEBUG: fetch_news('{query}') - Iniciando busca de notícias.")
     if is_cache_fresh(news_cache, cache_key, NEWS_CACHE_TTL):
+        print(f"DEBUG: CACHE HIT para notícias de '{query}'")
         return news_cache[cache_key]['data']
 
     if not NEWS_API_KEY:
-        print("NEWS_API_KEY não está configurada. Não será possível buscar notícias.")
+        print("DEBUG: NEWS_API_KEY não está configurada. Não será possível buscar notícias.")
         return []
 
     params = {
@@ -752,17 +771,18 @@ def fetch_news(query):
             for art in articles if art.get('title') and art.get('description') and art.get('url')
         ]
         news_cache[cache_key] = {'data': filtered_articles, 'timestamp': datetime.datetime.now()}
+        print(f"DEBUG: {len(filtered_articles)} notícias obtidas e cacheadas para '{query}'.")
         return filtered_articles
     except requests.exceptions.RequestException as e:
-        print(f"Erro ao buscar notícias: {e}")
+        print(f"ERRO: ao buscar notícias para '{query}': {e}")
         return []
     except json.JSONDecodeError as e:
-        print(f"Erro ao decodificar JSON da API de notícias: {e}. Resposta: {response.text}")
+        print(f"ERRO: ao decodificar JSON da API de notícias para '{query}': {e}. Resposta: {response.text}")
         return []
 
 # --- FUNÇÃO: Verificar se uma tabela existe ---
 def check_table_exists(table_name):
-    print(f"DEBUG: Verificando se a tabela '{table_name}' existe...")
+    print(f"DEBUG: check_table_exists('{table_name}') - Verificando se a tabela existe...")
     try:
         with DBConnectionManager(dictionary=True) as cursor_db:
             if DB_TYPE == 'postgresql':
@@ -777,26 +797,45 @@ def check_table_exists(table_name):
                 exists_quoted = result_quoted_case['exists_table_quoted'] if result_quoted_case else False
 
                 exists = exists_default or exists_quoted
-                print(f"DEBUG: Tabela '{table_name}' existe (padrão/minúsculas): {exists_default}, (com aspas/exato): {exists_quoted}, Resultado final: {exists}")
+                print(f"DEBUG: check_table_exists('{table_name}') - Resultado: (padrão/minúsculas): {exists_default}, (com aspas/exato): {exists_quoted}, Final: {exists}")
                 return exists
             else: # MySQL (mantém como estava)
                 cursor_db.execute(f"SELECT COUNT(*) AS exists_table FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '{table_name}';")
                 result = cursor_db.fetchone()
                 exists = result['exists_table']
-                print(f"DEBUG: Tabela '{table_name}' existe: {exists}")
+                print(f"DEBUG: check_table_exists('{table_name}') - Resultado MySQL: {exists}")
                 return exists
     except Exception as e:
-        print(f"ERRO: Falha ao verificar a existência da tabela '{table_name}': {e}")
+        print(f"ERRO: check_table_exists('{table_name}') - Falha ao verificar a existência: {e}")
         return False
 
 # --- NOVA FUNÇÃO: Criar tabelas se não existirem ---
 def create_tables_if_not_exist():
-    print("DEBUG: Iniciando verificação e criação de tabelas...")
+    print("DEBUG: create_tables_if_not_exist() - Iniciando verificação e criação de tabelas...")
     try:
         with DBConnectionManager() as cursor_db:
             if DB_TYPE == 'postgresql':
+                # Ordem importa para FOREIGN KEYs
+                
+                # 1. Tabela 'alertas' (DROP FORÇADO ANTES, para evitar problemas de dependência circular com transacoes caso erro prévio)
+                alertas_table_name = "alertas"
+                print(f"DEBUG: create_tables_if_not_exist() - Tentando DROP da tabela '{alertas_table_name}' (e suas variantes) antes da criação...")
+                try:
+                    cursor_db.execute(f'DROP TABLE IF EXISTS "{alertas_table_name.upper()}" CASCADE;')
+                    cursor_db.connection.commit()
+                    print(f"DEBUG: create_tables_if_not_exist() - DROP TABLE IF EXISTS \"{alertas_table_name.upper()}\" executado e commitado.")
+                except Exception as drop_err:
+                    print(f"AVISO: create_tables_if_not_exist() - Erro ao tentar dropar tabela maiúscula '{alertas_table_name.upper()}': {drop_err}. Ignorado se não existir.")
+
+                try:
+                    cursor_db.execute(f'DROP TABLE IF EXISTS {alertas_table_name} CASCADE;')
+                    cursor_db.connection.commit()
+                    print(f"DEBUG: create_tables_if_not_exist() - DROP TABLE IF EXISTS {alertas_table_name} executado e commitado.")
+                except Exception as drop_err:
+                    print(f"AVISO: create_tables_if_not_exist() - Erro ao tentar dropar tabela minúscula '{alertas_table_name}': {drop_err}. Ignorado se não existir.")
+
                 # Tabela 'users'
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS users (PostgreSQL)...")
+                print("DEBUG: create_tables_if_not_exist() - Executando SQL: CREATE TABLE IF NOT EXISTS users (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id SERIAL PRIMARY KEY,
@@ -809,11 +848,11 @@ def create_tables_if_not_exist():
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Comando SQL para 'users' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit() 
+                print("DEBUG: create_tables_if_not_exist() - Comando SQL para 'users' executado e commitado.")
 
                 # Tabela 'transacoes' (depende de 'users')
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (PostgreSQL)...")
+                print("DEBUG: create_tables_if_not_exist() - Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS transacoes (
                         id SERIAL PRIMARY KEY,
@@ -830,50 +869,31 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Comando SQL para 'transacoes' executado.")
-                cursor_db.connection.commit() # Commit explícito
-
-                # Tabela 'alertas' (depende de 'users') -- Melhorando a resiliência para PostgreSQL
-                alertas_table_name = "alertas" # Nome da tabela que queremos que o PG veja em minúsculas
-                print(f"DEBUG: Verificando e garantindo tabela '{alertas_table_name}' (PostgreSQL) com drops robustos...")
+                cursor_db.connection.commit() 
+                print("DEBUG: create_tables_if_not_exist() - Comando SQL para 'transacoes' executado e commitado.")
                 
-                # Tenta dropar versões maiúsculas ou com aspas que podem ter sido criadas anteriormente por engano
-                try:
-                    cursor_db.execute(f'DROP TABLE IF EXISTS "{alertas_table_name.upper()}" CASCADE;')
-                    cursor_db.connection.commit() # Commit explícito após DROP
-                    print(f"DEBUG: DROP TABLE IF EXISTS \"{alertas_table_name.upper()}\" CASCADE executado e commitado (ignora se não existir).")
-                except Exception as drop_err:
-                    print(f"AVISO: Erro ao tentar dropar tabela maiúscula '{alertas_table_name.upper()}': {drop_err}. Ignorado se não existir.")
-
-                try:
-                    cursor_db.execute(f'DROP TABLE IF EXISTS {alertas_table_name} CASCADE;') # Dropar a versão minúscula/padrão
-                    cursor_db.connection.commit() # Commit explícito após DROP
-                    print(f"DEBUG: DROP TABLE IF EXISTS {alertas_table_name} CASCADE executado e commitado (ignora se não existir).")
-                except Exception as drop_err:
-                    print(f"AVISO: Erro ao tentar dropar tabela minúscula '{alertas_table_name}': {drop_err}. Ignorado se não existir.")
-
-
+                # 2. Recriação da tabela 'alertas' (agora com a certeza de que as dependências estão no lugar)
                 sql_create_alertas = f"""
-                    CREATE TABLE {alertas_table_name} ( -- SEM ASPAS para garantir que seja minúscula por padrão
+                    CREATE TABLE {alertas_table_name} ( 
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         simbolo_ativo VARCHAR(20) NOT NULL,
                         preco_alvo DECIMAL(10, 2) NOT NULL,
-                        tipo_alerta VARCHAR(10) NOT NULL, -- 'ACIMA' ou 'ABAIXO'
-                        status VARCHAR(20) DEFAULT 'ATIVO' NOT NULL, -- 'ATIVO', 'DISPARADO', 'CANCELADO'
+                        tipo_alerta VARCHAR(10) NOT NULL, 
+                        status VARCHAR(20) DEFAULT 'ATIVO' NOT NULL, 
                         data_criacao TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                         data_disparo TIMESTAMP WITH TIME ZONE,
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """
-                print(f"DEBUG: Executando SQL CREATE TABLE para '{alertas_table_name}':\n{sql_create_alertas}")
+                print(f"DEBUG: create_tables_if_not_exist() - Executando SQL CREATE TABLE para '{alertas_table_name}':\n{sql_create_alertas}")
                 cursor_db.execute(sql_create_alertas)
-                cursor_db.connection.commit() # Commit explícito após CREATE
-                print(f"DEBUG: Comando SQL para '{alertas_table_name}' executado e commitado.")
+                cursor_db.connection.commit() 
+                print(f"DEBUG: create_tables_if_not_exist() - Comando SQL para '{alertas_table_name}' executado e commitado.")
 
 
                 # Tabela 'admin_audit_logs'
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (PostgreSQL)...")
+                print("DEBUG: create_tables_if_not_exist() - Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS admin_audit_logs (
                         id SERIAL PRIMARY KEY,
@@ -882,16 +902,16 @@ def create_tables_if_not_exist():
                         action_type VARCHAR(50) NOT NULL,
                         target_user_id INTEGER,
                         target_username_at_action VARCHAR(80),
-                        details JSONB, -- PostgreSQL uses JSONB for JSON data
+                        details JSONB, 
                         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Comando SQL para 'admin_audit_logs' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit() 
+                print("DEBUG: create_tables_if_not_exist() - Comando SQL para 'admin_audit_logs' executado e commitado.")
 
             else: # MySQL (Keep as is as MySQL isn't the problem here)
                 # Tabela 'users'
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS users (MySQL)...")
+                print("DEBUG: create_tables_if_not_exist() - Executando SQL: CREATE TABLE IF NOT EXISTS users (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -904,10 +924,10 @@ def create_tables_if_not_exist():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Comando SQL para 'users' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit()
+                print("DEBUG: create_tables_if_not_exist() - Comando SQL para 'users' executado e commitado.")
 
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (MySQL)...")
+                print("DEBUG: create_tables_if_not_exist() - Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS transacoes (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -924,10 +944,10 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Comando SQL para 'transacoes' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit()
+                print("DEBUG: create_tables_if_not_exist() - Comando SQL para 'transacoes' executado e commitado.")
 
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS alertas (MySQL)...") # NOME AGORA É 'alertas'
+                print("DEBUG: create_tables_if_not_exist() - Executando SQL: CREATE TABLE IF NOT EXISTS alertas (MySQL)...") 
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS alertas (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -941,10 +961,10 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Comando SQL para 'alertas' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit()
+                print("DEBUG: create_tables_if_not_exist() - Comando SQL para 'alertas' executado e commitado.")
 
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (MySQL)...")
+                print("DEBUG: create_tables_if_not_exist() - Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS admin_audit_logs (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -957,12 +977,12 @@ def create_tables_if_not_exist():
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Comando SQL para 'admin_audit_logs' executado.")
-                cursor_db.connection.commit() # Commit explícito
-            print("DEBUG: Todas as operações CREATE TABLE IF NOT EXISTS foram enviadas ao banco de dados.")
+                cursor_db.connection.commit()
+                print("DEBUG: create_tables_if_not_exist() - Comando SQL para 'admin_audit_logs' executado e commitado.")
+            print("DEBUG: create_tables_if_not_exist() - Todas as operações CREATE TABLE IF NOT EXISTS foram enviadas e commitadas.")
     except Exception as e:
-        print(f"ERRO CRÍTICO: Falha ao tentar verificar/criar tabelas: {e}")
-        raise # Re-lança a exceção para que a Render saiba que a inicialização falhou
+        print(f"ERRO CRÍTICO: create_tables_if_not_exist() - Falha ao tentar verificar/criar tabelas: {e}")
+        raise 
 
 # --- ROTAS DA APLICAÇÃO ---
 
@@ -979,15 +999,15 @@ def index():
 
     # Dados da Carteira
     posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado = calcular_posicoes_carteira(user_id)
-    print(f"DEBUG: index route - Posições da carteira: {posicoes}")
-    print(f"DEBUG: index route - Total valor carteira: {total_valor_carteira}")
+    print(f"DEBUG: index route - Posições da carteira (antes do template): {posicoes}")
+    print(f"DEBUG: index route - Total valor carteira (antes do template): {total_valor_carteira}")
 
     # Gráfico de Pizza
     chart_labels = []
     chart_values = []
     for simbolo, dados in posicoes.items():
-        if dados['valor_atual'] > 0:
-            chart_labels.append(dados['nome_popular']) # Use nome amigável para o label
+        if dados['valor_atual'] is not None and dados['valor_atual'] > 0: # Check for None explicitly
+            chart_labels.append(dados['nome_popular']) 
             chart_values.append(dados['valor_atual'])
 
     pie_chart_json = None
@@ -1011,7 +1031,7 @@ def index():
 
     for simbolo, dados in posicoes.items():
         if dados['lucro_prejuizo_nao_realizado'] is not None:
-            profit_loss_labels.append(dados['nome_popular']) # Use nome amigável para o label
+            profit_loss_labels.append(dados['nome_popular']) 
             profit_loss_values.append(dados['lucro_prejuizo_nao_realizado'])
             profit_loss_colors.append('green' if dados['lucro_prejuizo_nao_realizado'] >= 0 else 'red')
 
@@ -1034,7 +1054,7 @@ def index():
 
     # Notícias
     all_news = []
-    # Fetch general news
+    
     general_news_articles = fetch_news("Mercado Financeiro Brasil")
     for article in general_news_articles:
         all_news.append({
@@ -1043,14 +1063,14 @@ def index():
             'url': article['url'],
             'source': article['source'],
             'publishedAt': article['publishedAt'],
-            'simbolo_display': 'Geral' # Add a flag for general news
+            'simbolo_display': 'Geral' 
         })
 
-    # Fetch news for top 3 assets in portfolio
+    
     if posicoes:
-        # Sort positions by current value to get top assets
-        sorted_posicoes = sorted(posicoes.items(), key=lambda item: item[1]['valor_atual'], reverse=True)
-        top_symbols_for_news = [s for s, _ in sorted_posicoes][:3] # Get only symbols
+        
+        sorted_posicoes = sorted(posicoes.items(), key=lambda item: item[1]['valor_atual'] if item[1]['valor_atual'] is not None else -1, reverse=True)
+        top_symbols_for_news = [s for s, _ in sorted_posicoes][:3] 
 
         for simbolo_yf in top_symbols_for_news:
             news_query_for_asset = REVERSE_SYMBOL_MAPPING.get(simbolo_yf, simbolo_yf.replace('.SA', '').upper())
@@ -1065,13 +1085,13 @@ def index():
                     'simbolo_display': REVERSE_SYMBOL_MAPPING.get(simbolo_yf, simbolo_yf.replace('.SA', '').upper())
                 })
     
-    # Sort all news by published date, newest first
+    
     all_news.sort(key=lambda x: x['publishedAt'] if x['publishedAt'] else datetime.datetime.min, reverse=True)
-    # Format date for display in template
+    
     for news_item in all_news:
         news_item['date'] = news_item['publishedAt'].strftime('%d/%m/%Y %H:%M') if news_item['publishedAt'] else 'N/A'
     
-    print(f"DEBUG: index route - Total de notícias coletadas: {len(all_news)}")
+    print(f"DEBUG: index route - Total de notícias coletadas (antes do template): {len(all_news)}")
 
 
     # Histórico de Transações para o Dashboard
@@ -1087,21 +1107,21 @@ def index():
         user_id, data_inicio, data_fim, ordenar_por, ordem, simbolo_filtro=simbolo_filtro_mapeado, page=page, per_page=TRANSACTIONS_PER_PAGE
     )
     total_pages = (total_transacoes + TRANSACTIONS_PER_PAGE - 1) // TRANSACTIONS_PER_PAGE
-    print(f"DEBUG: index route - Transações: {len(transacoes)}, Total: {total_transacoes}")
+    print(f"DEBUG: index route - Transações (antes do template): {len(transacoes)}, Total: {total_transacoes}")
 
 
     # Alertas de Preço
-    alertas = buscar_alertas(user_id) # Esta função agora lida com a ausência da tabela
-    print(f"DEBUG: index route - Alertas encontrados: {len(alertas)}")
+    alertas = buscar_alertas(user_id) 
+    print(f"DEBUG: index route - Alertas encontrados (antes do template): {len(alertas)}")
 
 
     return render_template('index.html',
                            user_name=user_name,
-                           posicoes_carteira=posicoes, # Changed to posicoes_carteira for template match
+                           posicoes_carteira=posicoes, 
                            total_valor_carteira=total_valor_carteira,
                            total_lucro_nao_realizado=total_lucro_nao_realizado,
                            total_prejuizo_nao_realizado=total_prejuizo_nao_realizado,
-                           all_news=all_news, # Changed to all_news for template match
+                           all_news=all_news, 
                            pie_chart_json=pie_chart_json,
                            bar_chart_json=bar_chart_json,
                            transacoes=transacoes,
@@ -1286,12 +1306,12 @@ def add_transaction():
     if request.method == 'POST':
         print(f"DEBUG: add_transaction (POST) - request.form: {request.form}")
 
-        # --- Lógica para obter o símbolo ativo (Simplificada) ---
-        simbolo_ativo = request.form.get('simbolo_ativo') # Este campo agora virá do select ou do input manual
-        simbolo_ativo_select_value = request.form.get('simbolo_ativo_select_hidden') # Valor do select, se não for OUTRO
-        simbolo_ativo_manual_value = request.form.get('simbolo_ativo_manual_hidden') # Valor do input manual, se OUTRO
+        
+        simbolo_ativo = request.form.get('simbolo_ativo') 
+        simbolo_ativo_select_value = request.form.get('simbolo_ativo_select_hidden') 
+        simbolo_ativo_manual_value = request.form.get('simbolo_ativo_manual_hidden') 
 
-        # DEBUG: Adiciona logs para ver o que realmente está sendo recebido
+        
         print(f"DEBUG: Simbolo ativo recebido (geral): '{simbolo_ativo}'")
         print(f"DEBUG: Simbolo ativo recebido (select hidden): '{simbolo_ativo_select_value}'")
         print(f"DEBUG: Simbolo ativo recebido (manual hidden): '{simbolo_ativo_manual_value}'")
@@ -1299,7 +1319,7 @@ def add_transaction():
 
         if not simbolo_ativo or simbolo_ativo.strip() == '':
             flash('Por favor, selecione ou digite um símbolo para o ativo.', 'danger')
-            # Passa os valores de volta para o template para que os campos selem preenchidos
+            
             return render_template('add_transaction.html', symbols=symbols,
                                    data_transacao=request.form.get('data_transacao'),
                                    hora_transacao=request.form.get('hora_transacao'),
@@ -1308,12 +1328,11 @@ def add_transaction():
                                    tipo_operacao=request.form.get('tipo_operacao'),
                                    custos_taxas=request.form.get('custos_taxas', '0.00'),
                                    observacoes=request.form.get('observacoes'),
-                                   # Passa o simbolo_ativo_manual para manter o valor no campo
+                                   
                                    simbolo_ativo_manual=simbolo_ativo_manual_value,
-                                   simbolo_ativo_select=simbolo_ativo_select_value) # E o valor do select
+                                   simbolo_ativo_select=simbolo_ativo_select_value) 
 
-        # Se o simbolo_ativo veio do campo manual (selecionou "OUTRO"), usamos ele.
-        # Caso contrário (select normal ou já um ticker YF), usamos o que veio direto.
+        
         final_simbolo_para_processamento = simbolo_ativo.strip().upper()
 
 
@@ -1403,15 +1422,14 @@ def add_transaction():
                                    custos_taxas=custos_taxas_str,
                                    observacoes=observacoes)
         
-        # Mapeamento do símbolo ativo para o formato YFinance para salvar no DB
-        # Usa o final_simbolo_para_processamento que já foi validado e capitalizado/stripado
+        
         simbolo_ativo_yf = SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
         if simbolo_ativo_yf == final_simbolo_para_processamento and \
            not any(c in final_simbolo_para_processamento for c in ['^', '-', '=']) and \
            not any(final_simbolo_para_processamento.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
             if 4 <= len(final_simbolo_para_processamento) <= 6 and final_simbolo_para_processamento.isalnum():
                 simbolo_ativo_yf = f"{final_simbolo_para_processamento.upper()}.SA"
-        simbolo_ativo_yf = simbolo_ativo_yf.upper() # Garante que o símbolo final esteja em maiúsculas
+        simbolo_ativo_yf = simbolo_ativo_yf.upper() 
         
         print(f"DEBUG: Simbolo ativo YF final para DB: {simbolo_ativo_yf}")
 
@@ -1425,7 +1443,7 @@ def add_transaction():
                     user_id,
                     data_transacao,
                     hora_transacao,
-                    simbolo_ativo_yf, # Salva o símbolo padronizado ou o que o usuário digitou
+                    simbolo_ativo_yf, 
                     quantidade,
                     preco_unitario,
                     tipo_operacao,
@@ -1449,8 +1467,7 @@ def add_transaction():
                                    custos_taxas=custos_taxas_str,
                                    observacoes=observacoes)
 
-    # Para GET request ou quando há erro na submissão
-    # Adiciona valores iniciais para simbolo_ativo_manual e simbolo_ativo_select para o caso de um POST com erro.
+    
     initial_simbolo_ativo_manual = request.args.get('simbolo_ativo_manual', '')
     initial_simbolo_ativo_select = request.args.get('simbolo_ativo_select', '')
     
@@ -1483,7 +1500,7 @@ def edit_transaction(transaction_id):
         print(f"DEBUG: edit_transaction - Transação {transaction_id} não encontrada ou não pertence ao user {user_id}.")
         return redirect(url_for('transactions_list'))
 
-    # DEBUG: Imprime o objeto transaction ANTES da formatação para ver o estado inicial
+    
     print(f"DEBUG: edit_transaction - Transaction object antes da formatação: {transaction}")
 
 
@@ -1493,17 +1510,16 @@ def edit_transaction(transaction_id):
             data_transacao = datetime.datetime.strptime(data_transacao_str, '%Y-%m-%d').date()
         except ValueError:
             flash('Formato de data inválido. Use AAAA-MM-DD.', 'danger')
-            # Garante que 'transaction' tem os valores formatados mesmo em caso de erro de validação
+            
             transaction['data_transacao_formatted'] = data_transacao_str
             if request.form.get('hora_transacao'):
                 transaction['hora_transacao_formatted'] = request.form.get('hora_transacao')
             else:
                 transaction['hora_transacao_formatted'] = None
-            # Tenta obter o nome amigável para exibição em caso de erro
-            # Prioriza o valor do campo manual se presente, senão do select
+            
             if request.form.get('simbolo_ativo_manual_edit'):
                 transaction['simbolo_ativo_display'] = request.form.get('simbolo_ativo_manual_edit')
-                transaction['simbolo_ativo'] = request.form.get('simbolo_ativo_manual_edit') # Update the actual symbol for consistency
+                transaction['simbolo_ativo'] = request.form.get('simbolo_ativo_manual_edit') 
             else:
                 transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(request.form.get('simbolo_ativo'), request.form.get('simbolo_ativo'))
                 transaction['simbolo_ativo'] = request.form.get('simbolo_ativo')
@@ -1528,9 +1544,9 @@ def edit_transaction(transaction_id):
                     transaction['simbolo_ativo'] = request.form.get('simbolo_ativo')
                 return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
-        # Lógica para obter o símbolo ativo do formulário de edição
-        simbolo_ativo = request.form.get('simbolo_ativo') # Do select principal
-        simbolo_ativo_manual_edit = request.form.get('simbolo_ativo_manual_edit') # Do campo manual, se visível
+        
+        simbolo_ativo = request.form.get('simbolo_ativo') 
+        simbolo_ativo_manual_edit = request.form.get('simbolo_ativo_manual_edit') 
 
         final_simbolo_para_processamento = simbolo_ativo
         if simbolo_ativo == 'OUTRO_EDIT' and simbolo_ativo_manual_edit:
@@ -1540,7 +1556,7 @@ def edit_transaction(transaction_id):
             flash('Por favor, selecione ou digite um símbolo para o ativo.', 'danger')
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento) # Tentativa de preencher
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento) 
             return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
 
@@ -1559,7 +1575,7 @@ def edit_transaction(transaction_id):
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
             transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
-            # Passa os valores do formulário para o template para preencher novamente
+            
             transaction['quantidade'] = quantidade
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
@@ -1613,12 +1629,11 @@ def edit_transaction(transaction_id):
             return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
 
-    # Esta parte do código é executada para GET requests (quando a página é carregada)
-    # ou se houve um POST com erro de validação que levou ao re-render.
+    
     if 'data_transacao' in transaction and transaction['data_transacao']:
         transaction['data_transacao_formatted'] = transaction['data_transacao'].strftime('%Y-%m-%d')
     else:
-        transaction['data_transacao_formatted'] = None # Garante que a chave existe
+        transaction['data_transacao_formatted'] = None 
 
     if 'hora_transacao' in transaction and transaction['hora_transacao']:
         if isinstance(transaction['hora_transacao'], datetime.timedelta):
@@ -1631,9 +1646,9 @@ def edit_transaction(transaction_id):
         else:
             transaction['hora_transacao_formatted'] = None
     else:
-        transaction['hora_transacao_formatted'] = None # Garante que a chave existe
+        transaction['hora_transacao_formatted'] = None 
 
-    # Define simbolo_ativo_display para o template
+    
     transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
     
     print(f"DEBUG: edit_transaction - Transaction object antes de renderizar template: {transaction}")
@@ -1868,7 +1883,6 @@ def adicionar_alerta():
             INSERT INTO alertas (user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao)
             VALUES (%s, %s, %s, %s, %s, %s)
             """
-            # Certifique-se de que o nome da tabela no SQL é 'alertas' (em minúsculas)
             cursor_db.execute(sql, (user_id, simbolo_ativo_yf, preco_alvo, tipo_alerta, 'ATIVO', datetime.datetime.now()))
             flash('Alerta de preço adicionado com sucesso!', 'success')
     except Exception as e:
@@ -1888,7 +1902,6 @@ def excluir_alerta():
 
     try:
         with DBConnectionManager() as cursor_db:
-            # Garante que 'alertas' é acessado em minúsculas
             cursor_db.execute("DELETE FROM alertas WHERE id = %s AND user_id = %s", (alert_id, user_id))
             if cursor_db.rowcount > 0:
                 flash('Alerta de preço excluído com sucesso.', 'success')
@@ -1913,14 +1926,14 @@ def get_historical_chart_data(simbolo):
     cache_key = (simbolo_yf, "1y", "1d")
 
     if is_cache_fresh(historical_chart_cache, cache_key, HISTORICAL_CHART_CACHE_TTL):
-        print(f"DEBUG: Dados históricos para {simbolo_yf} encontrados no cache.")
+        print(f"DEBUG: Dados históricos para {simbolo_yf} encontrados no cache (API).")
         return jsonify(historical_chart_cache[cache_key]['data'])
 
     try:
         df_hist = get_historical_prices_yfinance_cached(simbolo_yf, period="1y", interval="1d")
         
         if df_hist.empty:
-            print(f"DEBUG: Não foi possível obter dados históricos para {simbolo_yf}.")
+            print(f"DEBUG: Não foi possível obter dados históricos para {simbolo_yf} (API).")
             return jsonify({'error': 'Não foi possível obter dados históricos para este símbolo.'}), 404
 
         fig = go.Figure(data=[go.Candlestick(x=df_hist.index,
@@ -1945,11 +1958,11 @@ def get_historical_chart_data(simbolo):
         
         response_data = {'simbolo': simbolo, 'plot_json': plot_json}
         historical_chart_cache[cache_key] = {'data': response_data, 'timestamp': datetime.datetime.now()}
-        print(f"DEBUG: Dados históricos para {simbolo_yf} obtidos e cacheados.")
+        print(f"DEBUG: Dados históricos para {simbolo_yf} obtidos e cacheados (API).")
         return jsonify(response_data)
 
     except Exception as e:
-        print(f"ERRO ao gerar gráfico histórico para {simbolo_yf}: {e}")
+        print(f"ERRO: ao gerar gráfico histórico para {simbolo_yf} (API): {e}")
         return jsonify({'error': f'Erro interno ao gerar o gráfico: {e}'}), 500
 
 
@@ -1964,12 +1977,10 @@ def predict_price_api(simbolo):
 
 print("DEBUG: Entrando no bloco if __name__ == '__main__':")
 if __name__ == '__main__':
-    # Chama a função para criar tabelas no início
     try:
         create_tables_if_not_exist()
         print("DEBUG: create_tables_if_not_exist() finalizada. Verificando a existência das tabelas agora...")
         
-        # Verificações pós-criação
         if check_table_exists('users'):
             print("DEBUG: Tabela 'users' confirmada após a tentativa de criação.")
         else:
@@ -1980,7 +1991,7 @@ if __name__ == '__main__':
         else:
             print("ERRO: Tabela 'transacoes' NÃO EXISTE após a tentativa de criação!")
 
-        if check_table_exists('alertas'): # Mudado para 'alertas'
+        if check_table_exists('alertas'): 
             print("DEBUG: Tabela 'alertas' confirmada após a tentativa de criação.")
         else:
             print("ERRO: Tabela 'alertas' NÃO EXISTE após a tentativa de criação!")
@@ -1993,7 +2004,7 @@ if __name__ == '__main__':
     except Exception as startup_error:
         print(f"ERRO CRÍTICO NA INICIALIZAÇÃO: A aplicação falhou ao iniciar devido a problemas no banco de dados: {startup_error}")
         import sys
-        sys.exit(1) # Força a saída se a criação das tabelas falhar
+        sys.exit(1) 
 
     port = int(os.environ.get("PORT", 5000))
     print(f"DEBUG: Iniciando Flask app em host 0.0.0.0, porta {port}")
