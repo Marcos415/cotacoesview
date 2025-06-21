@@ -502,7 +502,12 @@ def buscar_alertas(user_id):
             cursor_db.execute(sql, (user_id,))
             alertas = cursor_db.fetchall()
     except Exception as err:
-        print(f"ERRO ao buscar alertas de preço: {err}")
+        # Verifica se o erro é a tabela 'alerts' não existir
+        if "relation \"alerts\" does not exist" in str(err).lower() or "undefined_table" in str(err).lower():
+            print(f"AVISO: Tabela 'alerts' não existe, retornando lista vazia de alertas. Erro: {err}")
+            # Não lança o erro, permite que a aplicação continue
+        else:
+            print(f"ERRO ao buscar alertas de preço: {err}")
     return alertas
 
 # --- Função para obter o histórico de preços com Cache (usado por _get_current_price_yfinance e predictor_model) ---
@@ -1000,7 +1005,7 @@ def index():
 
 
     # Alertas de Preço
-    alertas = buscar_alertas(user_id)
+    alertas = buscar_alertas(user_id) # Esta função agora lida com a ausência da tabela
     print(f"DEBUG: index route - Alertas encontrados: {len(alertas)}")
 
 
@@ -1449,7 +1454,7 @@ def edit_transaction(transaction_id):
             flash('Por favor, selecione ou digite um símbolo para o ativo.', 'danger')
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.Sget(final_simbolo_para_processamento, final_simbolo_para_processamento) # Tentativa de preencher
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento) # Tentativa de preencher
             return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
 
 
