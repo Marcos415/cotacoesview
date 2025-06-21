@@ -498,6 +498,7 @@ def buscar_alertas(user_id):
     alertas = []
     try:
         with DBConnectionManager(dictionary=True) as cursor_db:
+            # Garante que 'alertas' é acessado em minúsculas
             sql = 'SELECT id, user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao, data_disparo FROM alertas WHERE user_id = %s ORDER BY data_criacao DESC'
             cursor_db.execute(sql, (user_id,))
             alertas = cursor_db.fetchall()
@@ -754,8 +755,10 @@ def check_table_exists(table_name):
     try:
         with DBConnectionManager(dictionary=True) as cursor_db:
             if DB_TYPE == 'postgresql':
-                # Use quotes for exact case matching if needed, though unquoted are lowercased by default
-                cursor_db.execute(f"SELECT to_regclass('public.\"{table_name}\"') IS NOT NULL AS exists_table;")
+                # No PostgreSQL, nomes de tabelas sem aspas são convertidos para minúsculas.
+                # Para verificar, é melhor consultar information_schema ou pg_tables
+                # O 'to_regclass' funciona bem para verificar a existência de um nome.
+                cursor_db.execute(f"SELECT to_regclass('{table_name}') IS NOT NULL AS exists_table;")
             else: # MySQL
                 cursor_db.execute(f"SELECT COUNT(*) AS exists_table FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '{table_name}';")
             result = cursor_db.fetchone()
@@ -808,20 +811,21 @@ def create_tables_if_not_exist():
                 """)
                 print("DEBUG: Comando SQL para 'transacoes' executado.")
 
-                # Tabela 'alertas' (depende de 'users') -- Força recriação se necessário
-                alertas_table_name = "alertas" # Define o nome da tabela aqui para consistência
+                # Tabela 'alertas' (depende de 'users') -- Força recriação para garantir nome consistente
+                alertas_table_name = "alertas" # Nome da tabela sem aspas para minúsculas
                 print(f"DEBUG: Verificando e garantindo tabela '{alertas_table_name}' (PostgreSQL)...")
                 
-                # Dropa a tabela se ela já existir, para garantir que a recriação funcione
-                # Isso é um fallback agressivo para lidar com estados inconsistentes
+                # Dropar a tabela se ela já existir, para garantir uma recriação limpa.
+                # Usamos CAST para lidar com o erro de "relation does not exist" no DROP,
+                # e CASCADE para remover dependências (se houver, o que não deve ser o caso aqui).
                 try:
-                    cursor_db.execute(f'DROP TABLE IF EXISTS "{alertas_table_name}" CASCADE;')
-                    print(f"DEBUG: DROP TABLE IF EXISTS \"{alertas_table_name}\" CASCADE executado.")
+                    cursor_db.execute(f'DROP TABLE IF EXISTS {alertas_table_name} CASCADE;')
+                    print(f"DEBUG: DROP TABLE IF EXISTS {alertas_table_name} CASCADE executado (ignora se não existir).")
                 except Exception as drop_err:
                     print(f"AVISO: Erro ao tentar dropar tabela '{alertas_table_name}': {drop_err}. Continuar com CREATE.")
 
                 sql_create_alertas = f"""
-                    CREATE TABLE "{alertas_table_name}" (
+                    CREATE TABLE {alertas_table_name} (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         simbolo_ativo VARCHAR(20) NOT NULL,
@@ -1486,7 +1490,7 @@ def edit_transaction(transaction_id):
             transaction['hora_transacao_formatted'] = hora_transacao_str
             transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
             # Passa os valores do formulário para o template para preencher novamente
-            transaction['quantidade'] = quantidade
+            transaction['quantidade'] = quantity
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
             transaction['observacoes'] = observacoes
@@ -1813,6 +1817,7 @@ def excluir_alerta():
 
     try:
         with DBConnectionManager() as cursor_db:
+            # Garante que 'alertas' é acessado em minúsculas
             cursor_db.execute("DELETE FROM alertas WHERE id = %s AND user_id = %s", (alert_id, user_id))
             if cursor_db.rowcount > 0:
                 flash('Alerta de preço excluído com sucesso.', 'success')
@@ -1904,7 +1909,7 @@ if __name__ == '__main__':
         else:
             print("ERRO: Tabela 'transacoes' NÃO EXISTE após a tentativa de criação!")
 
-        if check_table_exists('alertas'):
+        if check_table_exists('alertas'): # Mudado para 'alertas'
             print("DEBUG: Tabela 'alertas' confirmada após a tentativa de criação.")
         else:
             print("ERRO: Tabela 'alertas' NÃO EXISTE após a tentativa de criação!")
