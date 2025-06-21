@@ -682,14 +682,19 @@ def calcular_posicoes_carteira(user_id):
                         lucro_prejuizo_nao_realizado_individual = (preco_atual - preco_medio) * float(dados_posicao['quantidade'])
                     else:
                         lucro_prejuizo_nao_realizado_individual = 0.0
+                    
+                    valor_total_ativo = (preco_atual * dados_posicao['quantidade']) if preco_atual is not None else 0.0
 
                     posicoes[simbolo] = {
                         'quantidade': dados_posicao['quantidade'],
                         'preco_medio': preco_medio,
                         'preco_atual': preco_atual,
                         'preco_previsto': preco_previsto,
-                        'valor_atual': (preco_atual * dados_posicao['quantidade']) if preco_atual is not None else 0.0,
-                        'lucro_prejuizo_nao_realizado': lucro_prejuizo_nao_realizado_individual
+                        'valor_atual': valor_total_ativo, # Used by pie chart
+                        'lucro_prejuizo_nao_realizado': lucro_prejuizo_nao_realizado_individual,
+                        'nome_popular': REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo.replace('.SA', '').upper()), # Add nome_popular
+                        'quantidade_total': dados_posicao['quantidade'], # For clarity in the template (already exists as 'quantidade')
+                        'valor_total_ativo': valor_total_ativo # For clarity in the template
                     }
                     total_valor_carteira += posicoes[simbolo]['valor_atual']
 
@@ -755,16 +760,25 @@ def check_table_exists(table_name):
     try:
         with DBConnectionManager(dictionary=True) as cursor_db:
             if DB_TYPE == 'postgresql':
-                # No PostgreSQL, nomes de tabelas sem aspas são convertidos para minúsculas.
-                # Para verificar, é melhor consultar information_schema ou pg_tables
-                # O 'to_regclass' funciona bem para verificar a existência de um nome.
+                # Verifica se a tabela existe em minúsculas (comportamento padrão)
                 cursor_db.execute(f"SELECT to_regclass('{table_name}') IS NOT NULL AS exists_table;")
-            else: # MySQL
+                result_default_case = cursor_db.fetchone()
+                exists_default = result_default_case['exists_table'] if result_default_case else False
+
+                # Verifica se a tabela existe com o nome exato (se foi criada com aspas duplas)
+                cursor_db.execute(f"SELECT to_regclass('\"{table_name}\"') IS NOT NULL AS exists_table_quoted;")
+                result_quoted_case = cursor_db.fetchone()
+                exists_quoted = result_quoted_case['exists_table_quoted'] if result_quoted_case else False
+
+                exists = exists_default or exists_quoted
+                print(f"DEBUG: Tabela '{table_name}' existe (padrão/minúsculas): {exists_default}, (com aspas/exato): {exists_quoted}, Resultado final: {exists}")
+                return exists
+            else: # MySQL (mantém como estava)
                 cursor_db.execute(f"SELECT COUNT(*) AS exists_table FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '{table_name}';")
-            result = cursor_db.fetchone()
-            exists = result['exists_table']
-            print(f"DEBUG: Tabela '{table_name}' existe: {exists}")
-            return exists
+                result = cursor_db.fetchone()
+                exists = result['exists_table']
+                print(f"DEBUG: Tabela '{table_name}' existe: {exists}")
+                return exists
     except Exception as e:
         print(f"ERRO: Falha ao verificar a existência da tabela '{table_name}': {e}")
         return False
@@ -811,21 +825,26 @@ def create_tables_if_not_exist():
                 """)
                 print("DEBUG: Comando SQL para 'transacoes' executado.")
 
-                # Tabela 'alertas' (depende de 'users') -- Força recriação para garantir nome consistente
-                alertas_table_name = "alertas" # Nome da tabela sem aspas para minúsculas
-                print(f"DEBUG: Verificando e garantindo tabela '{alertas_table_name}' (PostgreSQL)...")
+                # Tabela 'alertas' (depende de 'users') -- Melhorando a resiliência para PostgreSQL
+                alertas_table_name = "alertas" # Nome da tabela que queremos que o PG veja em minúsculas
+                print(f"DEBUG: Verificando e garantindo tabela '{alertas_table_name}' (PostgreSQL) com drops robustos...")
                 
-                # Dropar a tabela se ela já existir, para garantir uma recriação limpa.
-                # Usamos CAST para lidar com o erro de "relation does not exist" no DROP,
-                # e CASCADE para remover dependências (se houver, o que não deve ser o caso aqui).
+                # Tenta dropar versões maiúsculas ou com aspas que podem ter sido criadas anteriormente por engano
                 try:
-                    cursor_db.execute(f'DROP TABLE IF EXISTS {alertas_table_name} CASCADE;')
+                    cursor_db.execute(f'DROP TABLE IF EXISTS "{alertas_table_name.upper()}" CASCADE;')
+                    print(f"DEBUG: DROP TABLE IF EXISTS \"{alertas_table_name.upper()}\" CASCADE executado (ignora se não existir).")
+                except Exception as drop_err:
+                    print(f"AVISO: Erro ao tentar dropar tabela maiúscula '{alertas_table_name.upper()}': {drop_err}. Ignorado se não existir.")
+
+                try:
+                    cursor_db.execute(f'DROP TABLE IF EXISTS {alertas_table_name} CASCADE;') # Dropar a versão minúscula/padrão
                     print(f"DEBUG: DROP TABLE IF EXISTS {alertas_table_name} CASCADE executado (ignora se não existir).")
                 except Exception as drop_err:
-                    print(f"AVISO: Erro ao tentar dropar tabela '{alertas_table_name}': {drop_err}. Continuar com CREATE.")
+                    print(f"AVISO: Erro ao tentar dropar tabela minúscula '{alertas_table_name}': {drop_err}. Ignorado se não existir.")
+
 
                 sql_create_alertas = f"""
-                    CREATE TABLE {alertas_table_name} (
+                    CREATE TABLE {alertas_table_name} ( -- SEM ASPAS para garantir que seja minúscula por padrão
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         simbolo_ativo VARCHAR(20) NOT NULL,
@@ -858,7 +877,7 @@ def create_tables_if_not_exist():
                 """)
                 print("DEBUG: Comando SQL para 'admin_audit_logs' executado.")
 
-            else: # MySQL
+            else: # MySQL (Keep as is as MySQL isn't the problem here)
                 # Tabela 'users'
                 print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS users (MySQL)...")
                 cursor_db.execute("""
@@ -952,7 +971,7 @@ def index():
     chart_values = []
     for simbolo, dados in posicoes.items():
         if dados['valor_atual'] > 0:
-            chart_labels.append(REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo)) # Use nome amigável para o label
+            chart_labels.append(dados['nome_popular']) # Use nome amigável para o label
             chart_values.append(dados['valor_atual'])
 
     pie_chart_json = None
@@ -976,7 +995,7 @@ def index():
 
     for simbolo, dados in posicoes.items():
         if dados['lucro_prejuizo_nao_realizado'] is not None:
-            profit_loss_labels.append(REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo)) # Use nome amigável para o label
+            profit_loss_labels.append(dados['nome_popular']) # Use nome amigável para o label
             profit_loss_values.append(dados['lucro_prejuizo_nao_realizado'])
             profit_loss_colors.append('green' if dados['lucro_prejuizo_nao_realizado'] >= 0 else 'red')
 
@@ -998,11 +1017,46 @@ def index():
 
 
     # Notícias
-    news_query = "Mercado Financeiro Brasil"
+    all_news = []
+    # Fetch general news
+    general_news_articles = fetch_news("Mercado Financeiro Brasil")
+    for article in general_news_articles:
+        all_news.append({
+            'title': article['title'],
+            'description': article['description'],
+            'url': article['url'],
+            'source': article['source'],
+            'publishedAt': article['publishedAt'],
+            'simbolo_display': 'Geral' # Add a flag for general news
+        })
+
+    # Fetch news for top 3 assets in portfolio
     if posicoes:
-        top_symbols = list(posicoes.keys())[:3]
-        news_query = ", ".join([REVERSE_SYMBOL_MAPPING.get(s, s) for s in top_symbols]) + ", Mercado Financeiro Brasil"
-    news_articles = fetch_news(news_query)
+        # Sort positions by current value to get top assets
+        sorted_posicoes = sorted(posicoes.items(), key=lambda item: item[1]['valor_atual'], reverse=True)
+        top_symbols_for_news = [s for s, _ in sorted_posicoes][:3] # Get only symbols
+
+        for simbolo_yf in top_symbols_for_news:
+            news_query_for_asset = REVERSE_SYMBOL_MAPPING.get(simbolo_yf, simbolo_yf.replace('.SA', '').upper())
+            asset_news = fetch_news(news_query_for_asset)
+            for article in asset_news:
+                all_news.append({
+                    'title': article['title'],
+                    'description': article['description'],
+                    'url': article['url'],
+                    'source': article['source'],
+                    'publishedAt': article['publishedAt'],
+                    'simbolo_display': REVERSE_SYMBOL_MAPPING.get(simbolo_yf, simbolo_yf.replace('.SA', '').upper())
+                })
+    
+    # Sort all news by published date, newest first
+    all_news.sort(key=lambda x: x['publishedAt'] if x['publishedAt'] else datetime.datetime.min, reverse=True)
+    # Format date for display in template
+    for news_item in all_news:
+        news_item['date'] = news_item['publishedAt'].strftime('%d/%m/%Y %H:%M') if news_item['publishedAt'] else 'N/A'
+    
+    print(f"DEBUG: index route - Total de notícias coletadas: {len(all_news)}")
+
 
     # Histórico de Transações para o Dashboard
     data_inicio = request.args.get('data_inicio')
@@ -1027,11 +1081,11 @@ def index():
 
     return render_template('index.html',
                            user_name=user_name,
-                           posicoes=posicoes,
+                           posicoes_carteira=posicoes, # Changed to posicoes_carteira for template match
                            total_valor_carteira=total_valor_carteira,
                            total_lucro_nao_realizado=total_lucro_nao_realizado,
                            total_prejuizo_nao_realizado=total_prejuizo_nao_realizado,
-                           news_articles=news_articles,
+                           all_news=all_news, # Changed to all_news for template match
                            pie_chart_json=pie_chart_json,
                            bar_chart_json=bar_chart_json,
                            transacoes=transacoes,
@@ -1490,7 +1544,7 @@ def edit_transaction(transaction_id):
             transaction['hora_transacao_formatted'] = hora_transacao_str
             transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
             # Passa os valores do formulário para o template para preencher novamente
-            transaction['quantidade'] = quantity
+            transaction['quantidade'] = quantidade # Corrected: used `quantity` previously, now `quantidade`
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
             transaction['observacoes'] = observacoes
@@ -1501,7 +1555,7 @@ def edit_transaction(transaction_id):
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
             transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
-            transaction['quantidade'] = quantity
+            transaction['quantidade'] = quantidade # Corrected
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
             transaction['observacoes'] = observacoes
@@ -1536,7 +1590,7 @@ def edit_transaction(transaction_id):
             transaction['data_transacao_formatted'] = data_transacao_str
             transaction['hora_transacao_formatted'] = hora_transacao_str
             transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
-            transaction['quantidade'] = quantity
+            transaction['quantidade'] = quantidade # Corrected
             transaction['preco_unitario'] = preco_unitario
             transaction['custos_taxas'] = custos_taxas
             transaction['observacoes'] = observacoes
@@ -1798,6 +1852,7 @@ def adicionar_alerta():
             INSERT INTO alertas (user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao)
             VALUES (%s, %s, %s, %s, %s, %s)
             """
+            # Certifique-se de que o nome da tabela no SQL é 'alertas' (em minúsculas)
             cursor_db.execute(sql, (user_id, simbolo_ativo_yf, preco_alvo, tipo_alerta, 'ATIVO', datetime.datetime.now()))
             flash('Alerta de preço adicionado com sucesso!', 'success')
     except Exception as e:
@@ -1927,3 +1982,4 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     print(f"DEBUG: Iniciando Flask app em host 0.0.0.0, porta {port}")
     app.run(debug=True, host='0.0.0.0', port=port)
+
