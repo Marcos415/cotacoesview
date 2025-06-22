@@ -834,7 +834,7 @@ def create_tables_if_not_exist():
                 print("DEBUG: Comando SQL para 'transacoes' executado.")
                 cursor_db.connection.commit() # Commit explícito
 
-                # Tabela 'alertas' (depende de 'users') - Simplificado para apenas CREATE IF NOT EXISTS
+                # Tabela 'alertas' (depende de 'users')
                 alertas_table_name = "alertas" 
                 print(f"DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS {alertas_table_name} (PostgreSQL)...")
                 cursor_db.execute(f"""
