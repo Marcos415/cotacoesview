@@ -1,411 +1,1011 @@
 {% extends 'base.html' %}
-
-{% block title %}Dashboard - Minha Carteira{% endblock %}
-
+ 
+{% block title %}Minha Carteira - Gestor de Investimentos{% endblock %}
+ 
+{% block head_extra %}
+<!-- Plotly.js CDN (usando a versão específica 2.30.0) -->
+<script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+<style>
+    /* Estilos para o Modal (Pop-up)
+*/
+    .modal {
+        display: none; /*
+Hidden by default */
+        position: fixed; /* Stay
+in place */
+        z-index: 1000; /* Sit
+on top */
+        left: 0;
+        top: 0;
+        width: 100%; /* Full
+width */
+        height: 100%; /* Full
+height */
+        overflow: auto; /*
+Enable scroll if needed */
+        background-color: rgba(0,0,0,0.7); /* Black
+w/ opacity */
+        display: flex; /* Use
+flexbox for centering */
+        align-items: center; /* Center vertically */
+        justify-content: center; /* Center horizontally */
+    }
+ 
+    .modal-content {
+        background-color: #fefefe;
+        margin: auto; /*
+Adjusted for flexbox centering */
+        padding: 20px;
+        border-radius: 0.75rem; /* rounded-xl */
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        width: 90%; /*
+Adjust width as needed */
+        max-width: 1000px; /* Max width for larger screens */
+        position: relative;
+    }
+ 
+    .close-button {
+        color: #aaa;
+        position: absolute;
+        top: 10px;
+        right: 20px;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: color 0.3s ease;
+    }
+ 
+    .close-button:hover,
+    .close-button:focus {
+        color: #333;
+        text-decoration: none;
+    }
+ 
+    /* Estilos para o gráfico dentro
+do modal */
+    #modalHistoricalChart {
+        min-height: 500px; /* Garante altura mínima para o
+gráfico */
+        width: 100%;
+        background-color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+ 
+    /* Loader para o gráfico */
+    .chart-loader {
+        border-top-color: #3498db;
+        -webkit-animation: spin 1s linear infinite;
+        animation: spin 1s linear infinite;
+        border-radius: 50%;
+        border: 4px solid rgba(0, 0, 0, 0.1);
+        border-top-color: #3498db;
+        height: 50px;
+        width: 50px;
+    }
+ 
+    @-webkit-keyframes spin {
+        0% { -webkit-transform: rotate(0deg); }
+        100% { -webkit-transform: rotate(360deg); }
+    }
+ 
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}
+ 
 {% block content %}
-<div class="container mx-auto p-4 md:p-8">
-    <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Bem-vindo, {{ user_name }}!</h1>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="mb-4">
-                {% for category, message in messages %}
-                    <div class="p-3 rounded-md text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}">
-                        {{ message }}
-                    </div>
-                {% endfor %}
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-4xl font-bold
+text-gray-900 mb-8 text-center">Dashboard de Investimentos</h1>
+ 
+    <!-- Cartões de Resumo da
+Carteira -->
+    <div class="grid grid-cols-1 md:grid-cols-2
+lg:grid-cols-3 gap-6 mb-8">
+        <!-- Cartão de Valor Total da Carteira -->
+        <div class="bg-gradient-to-r from-blue-500 to-blue-600
+rounded-lg shadow-lg p-6 text-white flex flex-col justify-between transform
+transition-transform hover:scale-105">
+            <div>
+               
+                <p class="text-sm font-medium
+opacity-80">Valor Total da Carteira</p>
+               
+                <p class="text-3xl font-bold mt-1">R$ {{ total_valor_carteira | floatformat(2) }}</p>
             </div>
-        {% endif %}
-    {% endwith %}
-
-    {# Botão Adicionar Transação #}
-    <div class="flex justify-center mb-8">
-        <a href="{{ url_for('add_transaction') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-300 ease-in-out transform hover:scale-105">
+            <div class="mt-4 text-sm opacity-90">
+                <p>Valor total de todos os seus
+ativos.</p>
+               
+    </div>
+        </div>
+ 
+        <!-- Cartão de Lucro/Prejuízo
+Total Não Realizado -->
+        <div class="rounded-lg shadow-lg p-6 text-white flex
+flex-col justify-between 
+                    {%
+if (total_lucro_nao_realizado + total_prejuizo_nao_realizado) >= 0
+%}bg-gradient-to-r from-green-500 to-green-600{% else %}bg-gradient-to-r
+from-red-500 to-red-600{% endif %}
+                   
+transform transition-transform hover:scale-105">
+            <div>
+               
+                <p class="text-sm font-medium opacity-80">Lucro/Prejuízo Total (Não Realizado)</p>
+               
+                <p class="text-3xl font-bold
+mt-1">R$ {{ (total_lucro_nao_realizado + total_prejuizo_nao_realizado) | floatformat(2) }}</p>
+               
+    </div>
+            <div class="mt-4 text-sm opacity-90">
+                <p>Lucro/Prejuízo flutuante das
+suas posições abertas.</p>
+               
+    (Valor Percentual): {{ ((total_lucro_nao_realizado + total_prejuizo_nao_realizado) / total_valor_carteira * 100) | default(0) | floatformat(2) }}%
+               
+    </div>
+        </div>
+ 
+        <!-- Cartão de Número de
+Ativos Diferentes -->
+        <div class="bg-gradient-to-r from-purple-500
+to-purple-600 rounded-lg shadow-lg p-6 text-white flex flex-col justify-between
+transform transition-transform hover:scale-105">
+            <div>
+               
+                <p class="text-sm font-medium
+opacity-80">Número de Ativos Diferentes</p>
+               
+                <p class="text-3xl font-bold mt-1">{{ posicoes_carteira|length }}</p>
+            </div>
+            <div class="mt-4 text-sm opacity-90">
+                <p>Quantidade de ativos distintos
+na sua carteira.</p>
+               
+    </div>
+        </div>
+    </div>
+ 
+    <!-- Botões de Ação -->
+    <div class="flex flex-wrap justify-center gap-4
+mb-10">
+        <a href="{{ url_for('add_transaction') }}"
+           class="bg-green-600 hover:bg-green-700 text-white
+font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out
+transform hover:-translate-y-1 hover:scale-105 flex items-center min-w-[220px]
+justify-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
             Adicionar Nova Transação
         </a>
+        <a href="{{ url_for('index')
+}}"
+               class="bg-blue-600
+hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md
+transition duration-300 ease-in-out transform hover:-translate-y-1
+hover:scale-105 flex items-center min-w-[220px] justify-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458
+12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064
+7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+            Ver Todas as Transações
+        </a>
     </div>
-
-    {# Cards de Resumo Financeiro #}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
-            <div>
-                <p class="text-gray-500 text-sm">Valor Total da Carteira</p>
-                <p class="text-2xl font-bold text-gray-900">R$ {{ total_valor_carteira|floatformat(2) }}</p>
-            </div>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 012 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
-            <div>
-                <p class="text-gray-500 text-sm">Lucro Não Realizado</p>
-                <p class="text-2xl font-bold {% if total_lucro_nao_realizado >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
-                    R$ {{ total_lucro_nao_realizado|floatformat(2) }}
-                </p>
-            </div>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8L11 3m-4 6L2 14" />
-            </svg>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
-            <div>
-                <p class="text-gray-500 text-sm">Prejuízo Não Realizado</p>
-                <p class="text-2xl font-bold {% if total_prejuizo_nao_realizado <= 0 %}text-red-600{% else %}text-green-600{% endif %}">
-                    R$ {{ total_prejuizo_nao_realizado|floatformat(2) }}
-                </p>
-            </div>
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8L11 21m-4-6L2 10" />
-            </svg>
+ 
+    <!-- Lista de Investimentos
+Atuais -->
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+        <h2 class="text-2xl font-bold
+text-gray-800 mb-6">Meus Investimentos Atuais</h2>
+        <!-- Wrapper para rolagem vertical
+(~5-6 itens visíveis) -->
+        <div class="overflow-y-auto
+max-h-[280px] border border-gray-200 rounded-lg"> {# Ajustado max-h aqui #}
+       
+    <div class="overflow-x-auto"> {# Permite rolagem horizontal
+APENAS dentro desta div se a tabela for muito larga #}
+       
+        {% if posicoes_carteira %}
+       
+        <!-- Adicionando table-fixed e otimizando larguras de coluna para
+evitar rolagem horizontal -->
+       
+        <table class="min-w-full divide-y divide-gray-200
+table-fixed">
+                    <thead class="bg-gray-50 sticky top-0 z-10">
+                   
+            <tr>
+                   
+                <th scope="col" class="px-4 py-2 text-left
+text-xs font-medium text-gray-500 uppercase tracking-wider w-[18%]"> {# Ativo #}
+                   
+                    Ativo
+                   
+                </th>
+                   
+                <th scope="col" class="px-4 py-2 text-left
+text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]"> {# Quantidade #}
+                   
+                    Qtd
+                   
+                </th>
+                   
+                <th scope="col" class="px-4 py-2 text-left
+text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]"> {# Preço Médio de Compra #}
+                   
+                    Preço Médio
+                   
+                </th>
+                   
+                <th scope="col" class="px-4 py-2 text-left
+text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]"> {# Preço Atual #}
+                   
+                    Preço Atual
+                   
+                </th>
+                   
+                <th scope="col" class="px-4 py-2 text-left
+text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]"> {# Previsão Próximo Dia #}
+                   
+                    Previsão
+                   
+                </th>
+                   
+                <th scope="col" class="px-4 py-2 text-left
+text-xs font-medium text-gray-500 uppercase tracking-wider w-[18%]"> {# Lucro/Prejuízo Não Realizado #}
+                   
+                    Lucro/Prejuízo
+                   
+                </th>
+                   
+                <th scope="col" class="px-4 py-2 text-left
+text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]"> {# Valor Total do Ativo #}
+                   
+                    Valor Total
+                   
+                </th>
+                   
+                <th scope="col" class="px-4 py-2 text-right
+text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]"> {# Gráfico #}
+                   
+                    Gráfico
+                   
+                </th>
+                    </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                   
+    {% for simbolo, dados in posicoes_carteira.items() %}
+       
+                        <tr>
+                            
+                <td class="px-4 py-2 text-sm font-medium text-gray-900
+truncate"> {# truncate
+para evitar overflow de texto #}
+                            
+                    {{ dados.nome_popular }} ({{ simbolo }})
+               
+                            </td>
+               
+                            <td class="px-4 py-2 text-sm text-gray-500">
+                                
+                    {{ dados.quantidade | floatformat(2) }}
+               
+                            </td>
+               
+                            <td class="px-4 py-2 text-sm text-gray-500">
+                                
+                    R$ {{ dados.preco_medio | floatformat(2) }}
+               
+                            </td>
+               
+                            <td class="px-4 py-2 text-sm {% if
+dados.preco_atual is not none and dados.preco_atual > dados.preco_medio
+%}text-green-600{% elif dados.preco_atual is not none and dados.preco_atual
+< dados.preco_medio %}text-red-600{% else %}text-gray-500{% endif %}">
+               
+                    {% if dados.preco_atual is not none %}
+                                    
+                        R$ {{ dados.preco_atual | floatformat(2) }}
+               
+                    {% else %}
+                                    
+                        N/A
+               
+                            {% endif %}
+                            
+                </td>
+                            
+                <td class="px-4 py-2 text-sm text-blue-600">
+                                
+                    {% if dados.preco_previsto is not none %}
+                                    
+                        R$ {{ dados.preco_previsto | floatformat(2) }}
+               
+                    {% else %}
+                                    
+                        N/A
+               
+                            {% endif %}
+                            
+                </td>
+                            
+                <td class="px-4 py-2 text-sm {% if
+dados.lucro_prejuizo_nao_realizado is not none and
+dados.lucro_prejuizo_nao_realizado >= 0 %}text-green-600{% elif
+dados.lucro_prejuizo_nao_realizado is not none and
+dados.lucro_prejuizo_nao_realizado < 0 %}text-red-600{% else
+%}text-gray-500{% endif %}">
+               
+                    {% if dados.lucro_prejuizo_nao_realizado is not none %}
+               
+                            R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) }} ({{ ((dados.lucro_prejuizo_nao_realizado / (dados.preco_medio * dados.quantidade)) * 100) | default(0) | floatformat(2) }}%)
+               
+                    {% else %}
+                                    
+                        N/A
+               
+                            {% endif %}
+                            
+                </td>
+                            
+                <td class="px-4 py-2 text-sm text-gray-500">
+                                
+                    R$ {{ dados.valor_atual | floatformat(2) }}
+               
+                            </td>
+                            <td class="px-4 py-2 text-right text-sm font-medium">
+                                
+                    <button type="button" 
+                                    
+                    class="show-chart-btn
+bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-1 px-3 rounded-md
+text-xs transition-colors"
+                                    
+                    data-symbol="{{ simbolo }}" data-asset-name="{{ dados.nome_popular
+}}">Gráfico</button>
+               
+                            </td>
+                        </tr>
+                   
+    {% endfor %}
+                    </tbody>
+                </table>
+ 
+                {% else %}
+       
+        <p class="text-center text-gray-500
+py-4">Nenhum investimento atual na
+carteira. Adicione transações para vê-los aqui.</p>
+       
+        {% endif %}
+       
+    </div>
         </div>
     </div>
-
-    {# Seção de Gráficos #}
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h3 class="text-xl font-semibold text-gray-800 mb-4">Alocação da Carteira</h3>
-            {% if pie_chart_json %}
-                <div id="portfolioPieChart" class="w-full" style="height: 350px;"></div>
-                <script>
-                    document.addEventListener('DOMContentLoaded', function() {
-                        try {
-                            var graph = JSON.parse({{ pie_chart_json | tojson }});
-                            Plotly.newPlot('portfolioPieChart', graph.data, graph.layout);
-                        } catch (e) {
-                            console.error("Erro ao carregar gráfico de pizza:", e);
-                            document.getElementById('portfolioPieChart').innerHTML = '<p class="text-red-500">Erro ao carregar o gráfico de alocação. Verifique os dados da sua carteira.</p>';
-                        }
-                    });
-                </script>
-            {% else %}
-                <p class="text-gray-500">Nenhum dado de carteira para exibir o gráfico de alocação.</p>
-            {% endif %}
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h3 class="text-xl font-semibold text-gray-800 mb-4">Lucro/Prejuízo Não Realizado</h3>
-            {% if bar_chart_json %}
-                <div id="unrealizedPLBarChart" class="w-full" style="height: 350px;"></div>
-                <script>
-                    document.addEventListener('DOMContentLoaded', function() {
-                        try {
-                            var graph = JSON.parse({{ bar_chart_json | tojson }});
-                            Plotly.newPlot('unrealizedPLBarChart', graph.data, graph.layout);
-                        } catch (e) {
-                            console.error("Erro ao carregar gráfico de barras:", e);
-                            document.getElementById('unrealizedPLBarChart').innerHTML = '<p class="text-red-500">Erro ao carregar o gráfico de lucro/prejuízo. Verifique os dados da sua carteira.</p>';
-                        }
-                    });
-                </script>
-            {% else %}
-                <p class="text-gray-500">Nenhum dado para exibir o gráfico de lucro/prejuízo não realizado.</p>
-            {% endif %}
-        </div>
+ 
+    <!-- Filtros de Transações e
+Tabela de Transações -->
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+        <h2 class="text-2xl font-bold
+text-gray-800 mb-6">Histórico de Transações</h2>
+        <form method="GET" action="{{ url_for('index')
+}}" class="transaction-filter-form grid grid-cols-1
+md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 items-end">
+            <div>
+                <label for="data_inicio" class="block text-sm font-medium text-gray-700">Data Início:</label>
+                <input type="date" id="data_inicio" name="data_inicio" value="{{
+data_inicio | default('') }}"
+                   
+    class="mt-1
+block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3
+focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="data_fim" class="block text-sm font-medium text-gray-700">Data Fim:</label>
+                <input type="date" id="data_fim" name="data_fim" value="{{
+data_fim | default('') }}"
+                   
+    class="mt-1
+block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3
+focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="simbolo_filtro" class="block text-sm font-medium text-gray-700">Símbolo/Nome:</label>
+                <input type="text" id="simbolo_filtro" name="simbolo_filtro" value="{{
+simbolo_filtro | default('') }}"
+                   
+    class="mt-1
+block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3
+focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                   
+    placeholder="Ex:
+PETR4, VALE3">
+       
     </div>
-
-    {# Seção Meus Investimentos Atuais #}
-    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h3 class="text-xl font-semibold text-gray-800 mb-4">Meus Investimentos Atuais</h3>
-        {% if posicoes %}
-        <div class="max-h-96 overflow-y-auto relative"> {# ADICIONADO PARA SCROLLBAR #}
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50 sticky top-0 z-10"> {# Sticky para cabeçalho fixo #}
+           
+    <div>
+       
+        <label for="ordenar_por" class="block text-sm font-medium
+text-gray-700">Ordenar Por:</label>
+       
+        <select id="ordenar_por" name="ordenar_por"
+       
+                class="mt-1 block w-full
+pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none
+focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                    <option value="data_transacao" {% if ordenar_por == 'data_transacao' %}selected{% endif %}>Data da Transação</option>
+       
+            <option value="simbolo_ativo" {% if ordenar_por == 'simbolo_ativo' %}selected{% endif %}>Símbolo Ativo</option>
+       
+            <option value="preco_unitario" {% if ordenar_por == 'preco_unitario' %}selected{% endif %}>Preço Unitário</option>
+       
+            <option value="quantidade" {% if ordenar_por == 'quantidade' %}selected{% endif %}>Quantidade</option>
+       
+            <option value="tipo_operacao" {% if ordenar_por == 'tipo_operacao' %}selected{% endif %}>Tipo de Operação</option>
+       
+        </select>
+            </div>
+            <div>
+                <label for="ordem" class="block text-sm font-medium text-gray-700">Ordem:</label>
+                <select id="ordem" name="ordem"
+                   
+    class="mt-1
+block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500
+focus:border-blue-500 sm:text-sm rounded-md">
+                    <option value="DESC" {% if ordem == 'DESC' %}selected{% endif %}>Descendente</option>
+                    <option value="ASC" {% if ordem == 'ASC' %}selected{% endif %}>Ascendente</option>
+                </select>
+            </div>
+            <div class="col-span-1 md:col-span-2 lg:col-span-4 flex
+justify-end space-x-2">
+                <button type="submit" class="bg-indigo-600
+hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
+                   
+                    Aplicar Filtros
+                   
+                </button>
+                <a href="{{ url_for('index') }}" class="bg-gray-400
+hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
+                   
+                    Limpar Filtros
+               
+    </a>
+       
+    </div>
+        </form>
+ 
+        <div class="overflow-x-auto">
+            {% if transacoes %}
+       
+    <table class="min-w-full divide-y
+divide-gray-200 table-auto"> {# Mantém table-auto para esta tabela, pois o número de colunas é maior
+e as observações podem variar #}
+       
+        <thead class="bg-gray-50">
                     <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ativo</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantidade</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preço Médio</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preço Atual</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preço Previsto</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor Atual</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lucro/Prejuízo Não Realizado</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                   
+                <th scope="col" class="px-4
+py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Data
+                   
+                </th>
+                   
+                <th scope="col" class="px-4
+py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Hora
+                   
+                </th>
+                   
+                <th scope="col" class="px-4
+py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Símbolo Ativo
+                   
+                </th>
+                   
+                <th scope="col" class="px-4
+py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Tipo de Operação
+                   
+                </th>
+                   
+                <th scope="col" class="px-4
+py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Preço Unitário
+                   
+                </th>
+                   
+                <th scope="col" class="px-4
+py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Quantidade
+                   
+                </th>
+                   
+                <th scope="col" class="px-4
+py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Custos/Taxas
+                   
+                </th>
+                   
+                <th scope="col" class="px-4
+py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Observações
+                   
+                </th>
+                   
+                <th scope="col" class="px-4
+py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Ações
+                   
+                </th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
-                    {% for simbolo, dados in posicoes.items() %}
+                    {%for transacao in transacoes %}
                     <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {{ REVERSE_SYMBOL_MAPPING.get(simbolo, simbolo) }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {{ dados.quantidade|floatformat(8) }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            R$ {{ dados.preco_medio|floatformat(2) }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm {% if dados.preco_atual and dados.preco_atual > dados.preco_medio %}text-green-600{% elif dados.preco_atual and dados.preco_atual < dados.preco_medio %}text-red-600{% else %}text-gray-500{% endif %}">
-                            {% if dados.preco_atual is not none %}
-                                R$ {{ dados.preco_atual|floatformat(2) }}
-                            {% else %}
-                                N/A
-                            {% endif %}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-500">
-                            {% if dados.preco_previsto is not none %}
-                                R$ {{ dados.preco_previsto|floatformat(2) }}
-                            {% else %}
-                                N/A
-                            {% endif %}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            R$ {{ dados.valor_atual|floatformat(2) }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm {% if dados.lucro_prejuizo_nao_realizado >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
-                            R$ {{ dados.lucro_prejuizo_nao_realizado|floatformat(2) }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <button onclick="openHistoricalChartModal('{{ simbolo }}')" class="text-indigo-600 hover:text-indigo-900 ml-4">Gráfico</button>
-                            <button onclick="openAlertModal('{{ simbolo }}', '{{ dados.preco_atual|floatformat(2) if dados.preco_atual is not none else '0.00' }}')" class="text-purple-600 hover:text-purple-900 ml-4">Alerta</button>
-                        </td>
+                   
+                <td class="px-4 py-2 text-sm
+text-gray-900">
+                   
+                    {{ transacao.data_transacao | datetimeformat }}
+               
+                </td>
+               
+                <td class="px-4 py-2 text-sm text-gray-500">
+                   
+                    {{ transacao.hora_transacao | datetimeformat('%H:%M') if transacao.hora_transacao else 'N/A' }}
+               
+                </td>
+                    
+                <td class="px-4 py-2 text-sm
+text-gray-500">
+                   
+                    {{ REVERSE_SYMBOL_MAPPING.get(transacao.simbolo_ativo, transacao.simbolo_ativo) }} ({{ transacao.simbolo_ativo }})
+               
+                </td>
+               
+                <td class="px-4 py-2 text-sm {% if
+transacao.tipo_operacao == 'COMPRA' %}text-blue-600{% else %}text-red-600{%
+endif %} font-semibold">
+               
+                    {{ transacao.tipo_operacao }}
+                            </td>
+                    
+                <td class="px-4 py-2 text-sm
+text-gray-500">
+                   
+                    R$ {{ transacao.preco_unitario | floatformat(2) }}
+               
+                </td>
+                    
+                <td class="px-4 py-2 text-sm
+text-gray-500">
+                   
+                    {{ transacao.quantidade | floatformat(2) }}
+                            </td>
+                    
+                <td class="px-4 py-2 text-sm
+text-gray-500">
+                   
+                    R$ {{ transacao.custos_taxas | floatformat(2) }}
+               
+                </td>
+                    
+                <td class="px-4 py-2 text-sm
+text-gray-500">
+                   
+                    {{ transacao.observacoes if transacao.observacoes else 'N/A' }}
+                            </td>
+                    
+                <td class="px-4 py-2 text-left
+text-sm font-medium">
+                   
+                    <a href="{{ url_for('edit_transaction',
+transaction_id=transacao.id) }}" class="text-indigo-600 hover:text-indigo-900
+mr-3">Editar</a> {# Corrigido de 'id' para 'transaction_id' #}
+                   
+                    <form action="{{ url_for('delete_transaction',
+transaction_id=transacao.id) }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir
+esta transação?');"> {# Corrigido de 'id' para 'transaction_id' e 'excluir_transacao' para 'delete_transaction' #}
+               
+                            <input type="hidden" name="id" value="{{
+transacao.id }}">
+                            
+                    <button type="submit" class="text-red-600
+hover:text-red-900">Excluir</button>
+                            
+                    </form>
+                            
+                </td>
                     </tr>
-                    {% endfor %}
+                    {%endfor %}
                 </tbody>
             </table>
-        </div>
-        {% else %}
-        <p class="text-gray-500">Nenhum investimento atual. Adicione transações para ver sua carteira aqui.</p>
-        {% endif %}
-    </div>
-
-    {# Seção Últimas Transações #}
-    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h3 class="text-xl font-semibold text-gray-800 mb-4">Últimas Transações</h3>
-        <div class="flex justify-end mb-4">
-            <a href="{{ url_for('transactions_list') }}" class="text-blue-600 hover:text-blue-800 font-semibold">Ver todas as transações</a>
-        </div>
-        {% if transacoes %}
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hora</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ativo</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantidade</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preço Unit.</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Operação</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Custos/Taxas</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Observações</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        {% for transacao in transacoes %}
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ transacao.data_transacao|datetimeformat('%Y-%m-%d') }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ transacao.hora_transacao|datetimeformat('%H:%M') if transacao.hora_transacao else 'N/A' }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ REVERSE_SYMBOL_MAPPING.get(transacao.simbolo_ativo, transacao.simbolo_ativo) }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ transacao.quantidade|floatformat(8) }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">R$ {{ transacao.preco_unitario|floatformat(2) }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm {{ 'text-green-600' if transacao.tipo_operacao == 'COMPRA' else 'text-red-600' }}">
-                                {{ transacao.tipo_operacao }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">R$ {{ transacao.custos_taxas|floatformat(2) }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ transacao.observacoes if transacao.observacoes else 'N/A' }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <a href="{{ url_for('edit_transaction', transaction_id=transacao.id) }}" class="text-indigo-600 hover:text-indigo-900">Editar</a>
-                                <form action="{{ url_for('delete_transaction', transaction_id=transacao.id) }}" method="POST" class="inline ml-2" onsubmit="return confirm('Tem certeza que deseja excluir esta transação?');">
-                                    <button type="submit" class="text-red-600 hover:text-red-900">Excluir</button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            <div class="mt-4 flex justify-between">
-                <div>
-                    Página {{ page }} de {{ total_pages }} (Total: {{ total_transacoes }} transações)
-                </div>
-                <div>
+ 
+            <!--
+Paginação -->
+            {% if total_pages > 1 %}
+            <nav class="mt-4 flex justify-center" aria-label="Pagination">
+                <ul class="flex items-center -space-x-px">
                     {% if page > 1 %}
-                        <a href="{{ url_for('index', page=page-1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Anterior</a>
-                    {% endif %}
-                    {% if page < total_pages %}
-                        <a href="{{ url_for('index', page=page+1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Próxima</a>
-                    {% endif %}
-                </div>
-            </div>
-        {% else %}
-            <p class="text-gray-500">Nenhuma transação encontrada. Adicione uma nova transação para começar.</p>
-        {% endif %}
+               
+            <li>
+               
+                <a href="{{ url_for('index',
+page=page-1, data_inicio=data_inicio, data_fim=data_fim,
+ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
+               
+                    class="pagination-link py-2
+px-3 leading-tight text-gray-500 bg-white border border-gray-300
+hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700
+dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white
+rounded-l-lg">Anterior</a>
+                    </li>
+                    {%endif %}
+                    {%for p in range(1, total_pages + 1) %}
+                    <li>
+               
+                <a href="{{ url_for('index',
+page=p, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por,
+ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
+               
+                    class="pagination-link py-2
+px-3 leading-tight {% if p == page %}text-blue-600 bg-blue-50 border-blue-300{%
+else %}text-gray-500 bg-white border border-gray-300{% endif %}
+hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700
+dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white">
+                                    
+                        {{ p }}
+                                    
+                </a>
+                    </li>
+                    {%endfor %}
+                    {%if page < total_pages %}
+                    <li>
+               
+            <li>
+               
+                <a href="{{ url_for('index',
+page=page+1, data_inicio=data_inicio, data_fim=data_fim,
+ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
+               
+                    class="pagination-link py-2
+px-3 leading-tight text-gray-500 bg-white border border-gray-300
+hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700
+dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white
+rounded-r-lg">Próxima</a>
+                    </li>
+                    {%endif %}
+                </ul>
+            </nav>
+            {% endif %}
+ 
+            {% else %}
+            <p class="text-center text-gray-500
+py-4">Nenhuma transação encontrada com
+os filtros atuais.</p>
+       
+    {% endif %}
+        </div>
     </div>
-
-    {# Seção Alertas de Preço #}
-    <div class="bg-white p-6 rounded-lg shadow-md">
-        <h3 class="text-xl font-semibold text-gray-800 mb-4">Alertas de Preço Ativos</h3>
-        {% if alertas %}
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ativo</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preço Alvo</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Criado Em</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        {% for alerta in alertas %}
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                {{ REVERSE_SYMBOL_MAPPING.get(alerta.simbolo_ativo, alerta.simbolo_ativo) }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">R$ {{ alerta.preco_alvo|floatformat(2) }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ alerta.tipo_alerta }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ alerta.status }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ alerta.data_criacao|datetimeformat('%Y-%m-%d %H:%M') }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <form action="{{ url_for('excluir_alerta') }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir este alerta?');">
-                                    <input type="hidden" name="id" value="{{ alerta.id }}">
-                                    <button type="submit" class="text-red-600 hover:text-red-900">Excluir</button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <p class="text-gray-500">Nenhum alerta de preço ativo.</p>
-        {% endif %}
+ 
+    <!-- Alertas de Preço -->
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+        <h2 class="text-2xl font-bold
+text-gray-800 mb-6">Meus Alertas de Preço</h2>
+        <form method="POST" action="{{
+url_for('adicionar_alerta') }}" class="alert-form mb-6 grid
+grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label for="alerta_simbolo" class="block text-sm font-medium text-gray-700">Símbolo Ativo:</label>
+                <input type="text" id="alerta_simbolo" name="simbolo_ativo" required
+                   
+    class="mt-1
+block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3
+focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                   
+    placeholder="Ex:
+PETR4, VALE3">
+       
     </div>
-
-</div>
-
-<!-- Modal para Gráfico Histórico -->
-<div id="historicalChartModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center p-4 z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 relative">
-        <h3 class="text-xl font-semibold mb-4 text-gray-800" id="historicalChartTitle">Gráfico Histórico</h3>
-        <button onclick="closeHistoricalChartModal()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
-        <div id="historicalChartContainer" class="w-full h-96"></div>
-        <div id="historicalChartLoading" class="hidden text-center text-blue-500 mt-4">Carregando gráfico...</div>
-        <div id="historicalChartError" class="hidden text-center text-red-500 mt-4"></div>
-    </div>
-</div>
-
-<!-- Modal para Adicionar Alerta -->
-<div id="alertModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center p-4 z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 relative">
-        <h3 class="text-xl font-semibold mb-4 text-gray-800">Adicionar Alerta de Preço</h3>
-        <button onclick="closeAlertModal()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
-        <form action="{{ url_for('adicionar_alerta') }}" method="POST">
-            <div class="mb-4">
-                <label for="alert_simbolo_ativo" class="block text-gray-700 text-sm font-bold mb-2">Ativo:</label>
-                <input type="text" name="simbolo_ativo" id="alert_simbolo_ativo" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-100" readonly required>
+           
+    <div>
+                <label for="preco_alvo" class="block text-sm font-medium text-gray-700">Preço Alvo:</label>
+                <input type="number" step="0.01" id="preco_alvo" name="preco_alvo" required
+                   
+    class="mt-1
+block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3
+focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                   
+    placeholder="Ex: 35.00">
             </div>
-            <div class="mb-4">
-                <label for="preco_atual_alerta" class="block text-gray-700 text-sm font-bold mb-2">Preço Atual (aproximado):</label>
-                <input type="text" id="preco_atual_alerta" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-100" readonly>
+            <div>
+                <label for="tipo_alerta" class="block text-sm font-medium text-gray-700">Tipo de Alerta:</label>
+                <select id="tipo_alerta" name="tipo_alerta" required
+       
+                class="mt-1 block w-full
+pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none
+focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
+                    <option value="ACIMA">Acima de</option>
+       
+            <option value="ABAIXO">Abaixo de</option>
+       
+        </select>
             </div>
-            <div class="mb-4">
-                <label for="preco_alvo" class="block text-gray-700 text-sm font-bold mb-2">Preço Alvo:</label>
-                <input type="number" step="0.01" name="preco_alvo" id="preco_alvo" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
-            </div>
-            <div class="mb-6">
-                <label for="tipo_alerta" class="block text-gray-700 text-sm font-bold mb-2">Tipo de Alerta:</label>
-                <select name="tipo_alerta" id="tipo_alerta" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
-                    <option value="ACIMA">Acima do Preço Alvo</option>
-                    <option value="ABAIXO">Abaixo do Preço Alvo</option>
-                </select>
-            </div>
-            <div class="flex justify-end">
-                <button type="button" onclick="closeAlertModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline mr-2">Cancelar</button>
-                <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">Adicionar Alerta</button>
+            <div class="md:col-span-3 flex justify-end">
+                <button type="submit" class="bg-purple-600
+hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md shadow-sm
+transition-colors">
+                   
+                    Adicionar Alerta
+                   
+                </button>
             </div>
         </form>
+ 
+        <div class="overflow-x-auto">
+            {% if alertas %}
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                   
+                <th scope="col" class="px-6
+py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Símbolo Ativo
+                   
+                </th>
+                   
+                <th scope="col" class="px-6
+py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Preço Alvo
+                   
+                </th>
+                   
+                <th scope="col" class="px-6
+py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Tipo
+                   
+                </th>
+                   
+                <th scope="col" class="px-6
+py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Status
+                   
+                </th>
+                   
+                <th scope="col" class="px-6
+py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Criado Em
+                   
+                </th>
+                   
+                <th scope="col" class="px-6
+py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Disparado Em
+                   
+                </th>
+                   
+                <th scope="col" class="px-6
+py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   
+                    Ações
+                   
+                </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {%for alerta in alertas %}
+                    <tr>
+                   
+                <td class="px-6 py-4
+whitespace-nowrap text-sm font-medium text-gray-900">
+                   
+                    {{ REVERSE_SYMBOL_MAPPING.get(alerta.simbolo_ativo, alerta.simbolo_ativo) }} ({{ alerta.simbolo_ativo }})
+               
+                </td>
+                    
+                <td class="px-6 py-4
+whitespace-nowrap text-sm text-gray-500">
+                   
+                    R$ {{ alerta.preco_alvo | floatformat(2) }}
+               
+                </td>
+                    
+                <td class="px-6 py-4
+whitespace-nowrap text-sm text-gray-500">
+                   
+                    {{ alerta.tipo_alerta }}
+                            </td>
+                    
+                <td class="px-6 py-4
+whitespace-nowrap text-sm 
+                   
+                    {% if alerta.status == 'ATIVO' %}text-green-600{%
+elif alerta.status == 'DISPARADO' %}text-orange-600{% else %}text-gray-500{%
+endif %} font-semibold">
+                   
+                    {{ alerta.status }}
+                            </td>
+                    
+                <td class="px-6 py-4
+whitespace-nowrap text-sm text-gray-500">
+                   
+                    {{ alerta.data_criacao | datetimeformat('%Y-%m-%d %H:%M') }}
+               
+                </td>
+                    
+                <td class="px-6 py-4
+whitespace-nowrap text-sm text-gray-500">
+                   
+                    {{ alerta.data_disparo | datetimeformat('%Y-%m-%d %H:%M') if alerta.data_disparo else 'N/A' }}
+               
+                </td>
+                    
+                <td class="px-6 py-4
+whitespace-nowrap text-left text-sm font-medium">
+                   
+                    <form action="{{ url_for('excluir_alerta') }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir este alerta?');">
+                        
+                    <input type="hidden" name="id" value="{{
+alerta.id }}">
+                        
+                    <button type="submit" class="text-red-600
+hover:text-red-900">Excluir</button>
+                        
+                    </form>
+                            
+                </td>
+                    </tr>
+                    {%endfor %}
+                </tbody>
+            </table>
+       
+    {% else %}
+       
+    <p class="text-center text-gray-500
+py-4">Nenhum alerta de preço
+configurado. Adicione um para ser notificado!</p>
+       
+    {% endif %}
+        </div>
+    </div>
+ 
+    <!-- Seção de Notícias
+Financeiras -->
+    <div class="bg-white rounded-lg shadow-lg p-6">
+        <h2 class="text-2xl font-bold
+text-gray-800 mb-6">Notícias Financeiras Recentes</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2
+lg:grid-cols-3 gap-6">
+            {% for news_item in all_news %}
+            <div class="bg-gray-50 rounded-lg p-4 shadow-sm flex
+flex-col justify-between transition-transform hover:scale-[1.02]">
+                <div>
+                    <h3 class="font-semibold text-lg text-gray-900 mb-2
+leading-tight">{{ news_item.title }}</h3>
+                    {%if news_item.simbolo_display %}
+                   
+    <p class="text-xs text-gray-600
+mb-2">Relacionado a: <span class="font-medium text-blue-700">{{ news_item.simbolo_display }}</span></p>
+                    {%endif %}
+                    <p class="text-sm text-gray-700 mb-3">{{ news_item.source }} - {{ news_item.date }}</p>
+                </div>
+                <a href="{{ news_item.url }}" target="_blank" rel="noopener noreferrer"
+                   class="text-blue-600
+hover:text-blue-800 text-sm font-medium mt-auto flex items-center">
+                   
+                    Ler mais
+                   
+                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0
+0v6m0-6L10 14"></path></svg>
+                </a>
+            </div>
+            {% else %}
+            <p class="text-center text-gray-500 py-4
+col-span-full">Nenhuma notícia disponível
+no momento.</p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+ 
+<!-- Modal do Gráfico -->
+<div id="chartModal" class="modal">
+    <div class="modal-content">
+        <span class="close-button">&times;</span>
+        <h3 id="modalChartTitle" class="text-xl font-bold text-gray-800 mb-4 text-center"></h3>
+        <div id="modalHistoricalChart" class="flex items-center justify-center">
+            <div class="chart-loader hidden"></div>
+            <div id="plotlyChartDiv"></div>
+        </div>
     </div>
 </div>
 
 <script>
-    function openHistoricalChartModal(simbolo) {
-        const modal = document.getElementById('historicalChartModal');
-        const title = document.getElementById('historicalChartTitle');
-        const container = document.getElementById('historicalChartContainer');
-        const loading = document.getElementById('historicalChartLoading');
-        const errorDiv = document.getElementById('historicalChartError');
+    document.addEventListener('DOMContentLoaded', function() {
+        const modal = document.getElementById('chartModal');
+        const closeButton = document.querySelector('.close-button');
+        const chartButtons = document.querySelectorAll('.show-chart-btn');
+        const modalChartTitle = document.getElementById('modalChartTitle');
+        const plotlyChartDiv = document.getElementById('plotlyChartDiv');
+        const chartLoader = document.querySelector('.chart-loader');
 
-        // Limpa erros e mensagens anteriores
-        errorDiv.classList.add('hidden');
-        errorDiv.textContent = '';
-        container.innerHTML = ''; // Limpa qualquer gráfico anterior
+        // Mapeamento de símbolo amigável para ticker (usado para o campo de alerta)
+        // Este JS pode ser atualizado se a lista for dinâmica ou vir do backend via JSON.
+        // Por enquanto, usaremos a lista de mapeamento JS já definida no index.html
+        // ou o REVERSE_SYMBOL_MAPPING do Jinja2 para a exibição.
+        // No JS, para o alerta, o usuário digita o ticker YF diretamente.
 
-        title.textContent = 'Gráfico Histórico de ' + simbolo;
-        loading.classList.remove('hidden'); // Mostra o indicador de carregamento
-        modal.classList.add('flex'); // Mostra o modal (flex para centralizar)
-        modal.classList.remove('hidden');
+        function showLoader() {
+            plotlyChartDiv.innerHTML = ''; // Clear previous chart
+            chartLoader.classList.remove('hidden');
+        }
 
-        fetch(`/get_historical_chart_data/${simbolo}`)
-            .then(response => {
-                loading.classList.add('hidden'); // Esconde o indicador de carregamento
-                if (!response.ok) {
-                    // Se a resposta não for OK (ex: 404, 500), tenta ler a mensagem de erro
-                    return response.json().then(err => { 
-                        throw new Error(err.error || 'Erro desconhecido ao carregar gráfico.'); 
-                    }).catch(() => {
-                        // Se não conseguir ler o JSON de erro, lança um erro genérico
-                        throw new Error('Erro na rede ou resposta inválida ao carregar gráfico.');
+        function hideLoader() {
+            chartLoader.classList.add('hidden');
+        }
+
+        chartButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const symbol = this.dataset.symbol;
+                const assetName = this.dataset.assetName; // Pega o nome amigável do data-asset-name
+                
+                modalChartTitle.textContent = `Carregando gráfico para ${assetName} (${symbol})...`;
+                modal.style.display = 'flex'; // Use flex to center
+                showLoader();
+
+                fetch(`/get_historical_chart_data/${symbol}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        hideLoader();
+                        if (data.error) {
+                            modalChartTitle.textContent = `Erro ao carregar dados para ${assetName} (${symbol}): ${data.error}`;
+                            plotlyChartDiv.innerHTML = `<p class="text-red-500 text-center">${data.error}</p>`;
+                        } else {
+                            modalChartTitle.textContent = `Gráfico Histórico de ${assetName} (${symbol})`;
+                            Plotly.newPlot('plotlyChartDiv', JSON.parse(data.plot_json).data, JSON.parse(data.plot_json).layout);
+                        }
+                    })
+                    .catch(error => {
+                        hideLoader();
+                        modalChartTitle.textContent = `Erro de rede ao carregar gráfico para ${assetName} (${symbol}).`;
+                        plotlyChartDiv.innerHTML = `<p class="text-red-500 text-center">Não foi possível carregar o gráfico. Tente novamente mais tarde. Erro: ${error}</p>`;
+                        console.error('Fetch error:', error);
                     });
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Dados recebidos para gráfico:', data); // Log dos dados recebidos
-                if (data && data.plot_json) {
-                    try {
-                        var graph = JSON.parse(data.plot_json);
-                        Plotly.newPlot('historicalChartContainer', graph.data, graph.layout);
-                    } catch (e) {
-                        console.error('Erro ao fazer parse do JSON do Plotly ou ao renderizar:', e);
-                        errorDiv.textContent = 'Erro ao processar dados do gráfico: ' + e.message;
-                        errorDiv.classList.remove('hidden');
-                    }
-                } else {
-                    errorDiv.textContent = 'Dados do gráfico vazios ou inválidos.';
-                    errorDiv.classList.remove('hidden');
-                }
-            })
-            .catch(error => {
-                console.error('Erro geral ao buscar dados do gráfico histórico:', error);
-                errorDiv.textContent = 'Erro ao carregar o gráfico: ' + error.message;
-                errorDiv.classList.remove('hidden');
             });
-    }
+        });
 
-    function closeHistoricalChartModal() {
-        const modal = document.getElementById('historicalChartModal');
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-        const container = document.getElementById('historicalChartContainer');
-        Plotly.purge(container); // Limpa o gráfico para liberar recursos
-    }
+        closeButton.addEventListener('click', function() {
+            modal.style.display = 'none';
+        });
 
-    function openAlertModal(simbolo, precoAtual) {
-        const modal = document.getElementById('alertModal');
-        document.getElementById('alert_simbolo_ativo').value = simbolo;
-        document.getElementById('preco_atual_alerta').value = 'R$ ' + precoAtual;
-        document.getElementById('preco_alvo').value = precoAtual; // Sugere o preço atual como alvo
-        modal.classList.add('flex');
-        modal.classList.remove('hidden');
-    }
-
-    function closeAlertModal() {
-        const modal = document.getElementById('alertModal');
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-    }
-
-    // Fecha os modais ao clicar fora deles
-    window.onclick = function(event) {
-        const historicalModal = document.getElementById('historicalChartModal');
-        const alertModal = document.getElementById('alertModal');
-        if (event.target == historicalModal) {
-            closeHistoricalChartModal();
-        }
-        if (event.target == alertModal) {
-            closeAlertModal();
-        }
-    }
+        window.addEventListener('click', function(event) {
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        });
+    });
 </script>
-{% endblock %}
