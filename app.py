@@ -14,8 +14,8 @@ from bs4 import BeautifulSoup
 
 from fpdf import FPDF
 
-import plotly.graph_objects as go
-import plotly.utils
+# Removido import plotly.graph_objects as go
+# Removido import plotly.utils
 import json
 
 # Importa a biblioteca para carregar variáveis de ambiente do .env
@@ -165,66 +165,49 @@ def floatformat(value, precision=2):
         return value # Retorna o valor original se não puder ser convertido para float
 
 
-# --- Configurações do Banco de Dados ---
+# --- Configurações do Banco de Dados (APENAS PostgreSQL) ---
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-if DATABASE_URL:
-    DB_TYPE = 'postgresql'
-    print("DEBUG: Usando conexão PostgreSQL (DATABASE_URL detectada).")
-else:
-    DB_TYPE = 'mysql'
-    print("DEBUG: Usando conexão MySQL (DATABASE_URL não detectada).")
-    # Agora pega as credenciais do banco de dados das variáveis de ambiente
-    DB_CONFIG_MYSQL = {
-        'host': os.getenv('DB_HOST', 'localhost'), # 'localhost' como fallback para desenvolvimento
-        'user': os.getenv('DB_USER'),
-        'password': os.getenv('DB_PASSWORD'),
-        'database': os.getenv('DB_DATABASE'),
-        'port': int(os.getenv('DB_PORT', 3307)) # Converte para int, com 3307 como fallback
-    }
-    # Verifica se as variáveis de ambiente essenciais para o DB foram carregadas
-    if not all([DB_CONFIG_MYSQL['user'], DB_CONFIG_MYSQL['password'], DB_CONFIG_MYSQL['database']]):
-        raise ValueError("Uma ou mais variáveis de ambiente do banco de dados MySQL (DB_USER, DB_PASSWORD, DB_DATABASE) não estão definidas para uso local. Por favor, defina-as no seu arquivo .env.")
+if not DATABASE_URL:
+    raise ValueError("A variável de ambiente 'DATABASE_URL' não está definida. Por favor, defina-a para a conexão PostgreSQL.")
+
+DB_TYPE = 'postgresql' # Força o tipo de DB para PostgreSQL
+print("DEBUG: Usando conexão PostgreSQL (DATABASE_URL detectada).")
 
 
-# --- Context Manager para Conexões Unificado (MySQL ou PostgreSQL) ---
+# --- Context Manager para Conexões (APENAS PostgreSQL) ---
 class DBConnectionManager:
     def __init__(self, dictionary=False, buffered=False):
         self.conn = None
         self.cursor = None
         self.dictionary = dictionary
-        self.buffered = buffered
-        self.db_type = DB_TYPE
+        self.buffered = buffered # Não é diretamente usado no Psycopg2 para o cursor_factory, mas mantido por compatibilidade
+        self.db_type = DB_TYPE # Sempre 'postgresql'
 
     def __enter__(self):
-        print(f"DEBUG: DBConnectionManager - Entrando no contexto ({self.db_type}, buffered={self.buffered})...")
+        print(f"DEBUG: DBConnectionManager - Entrando no contexto ({self.db_type})...")
         try:
-            if self.db_type == 'mysql':
-                import mysql.connector
-                self.conn = mysql.connector.connect(**DB_CONFIG_MYSQL)
-                self.cursor = self.conn.cursor(dictionary=self.dictionary, buffered=self.buffered)
-            elif self.db_type == 'postgresql':
-                import psycopg2
-                from urllib.parse import urlparse
-                result = urlparse(DATABASE_URL)
-                username = result.username
-                password = result.password
-                database = result.path[1:]
-                hostname = result.hostname
-                port = result.port if result.port else 5432
+            import psycopg2
+            from urllib.parse import urlparse
+            result = urlparse(DATABASE_URL)
+            username = result.username
+            password = result.password
+            database = result.path[1:]
+            hostname = result.hostname
+            port = result.port if result.port else 5432
 
-                self.conn = psycopg2.connect(
-                    database=database,
-                    user=username,
-                    password=password,
-                    host=hostname,
-                    port=port
-                )
-                if self.dictionary:
-                    import psycopg2.extras
-                    self.cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-                else:
-                    self.cursor = self.conn.cursor()
+            self.conn = psycopg2.connect(
+                database=database,
+                user=username,
+                password=password,
+                host=hostname,
+                port=port
+            )
+            if self.dictionary:
+                import psycopg2.extras
+                self.cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            else:
+                self.cursor = self.conn.cursor()
             print("DEBUG: DBConnectionManager - Conexão e cursor estabelecidos.")
             return self.cursor
         except Exception as err:
@@ -296,8 +279,8 @@ def admin_required(f):
 # --- Funções Auxiliares para Autenticação e Gestão de Utilizadores ---
 def get_user_by_id(user_id):
     try:
-        # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
+        # Usar dictionary=True para que os resultados sejam acessíveis por nome de coluna
+        with DBConnectionManager(dictionary=True) as cursor_db:
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             cursor_db.execute("SELECT id, username, full_name, email, contact_number, is_admin, created_at FROM users WHERE id = %s", (user_id,))
             user_data = cursor_db.fetchone()
@@ -309,8 +292,8 @@ def get_user_by_id(user_id):
 
 def get_user_by_username(username):
     try:
-        # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
+        # Usar dictionary=True para que os resultados sejam acessíveis por nome de coluna
+        with DBConnectionManager(dictionary=True) as cursor_db:
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             cursor_db.execute("SELECT id, username, password_hash, full_name, email, contact_number, is_admin FROM users WHERE username = %s", (username,))
             user_data = cursor_db.fetchone()
@@ -323,7 +306,7 @@ def get_user_by_username(username):
 # Nova função para buscar utilizador por email
 def get_user_by_email(email):
     try:
-        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
+        with DBConnectionManager(dictionary=True) as cursor_db:
             cursor_db.execute("SELECT id, username, full_name, email, contact_number, is_admin FROM users WHERE email = %s", (email,))
             user_data = cursor_db.fetchone()
             return user_data
@@ -343,8 +326,8 @@ def get_all_users():
         return []
 
     try:
-        # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
+        # Usar dictionary=True para que os resultados sejam acessíveis por nome de coluna
+        with DBConnectionManager(dictionary=True) as cursor_db:
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             sql_query = "SELECT id, username, full_name, email, contact_number, is_admin, created_at FROM users"
             cursor_db.execute(sql_query)
@@ -363,8 +346,8 @@ def get_all_users():
 def get_admin_count():
     """Retorna o número total de utilizadores com is_admin = TRUE."""
     try:
-        # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
-        with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
+        # Usar dictionary=True para que os resultados sejam acessíveis por nome de coluna
+        with DBConnectionManager(dictionary=True) as cursor_db:
             cursor_db.execute("SELECT COUNT(*) as admin_count FROM users WHERE is_admin = TRUE")
             result = cursor_db.fetchone()
             count = result['admin_count'] if result else 0
@@ -456,8 +439,8 @@ def log_admin_action(admin_user_id, action_type, target_user_id=None, details=No
             target_username = target_user_data['username'] if target_user_data else f"ID_Deletado_{target_user_id}"
             
         with DBConnectionManager() as cursor_db:
-            # Para MySQL, JSON é usado. Para PostgreSQL, JSONB é usado.
-            # O cursor.execute lida com a serialização para JSON/JSONB automaticamente dependendo do driver
+            # Para PostgreSQL, JSONB é usado.
+            # O cursor.execute lida com a serialização para JSONB automaticamente
             # desde que 'details' seja um objeto Python (dict, list).
             sql = """
             INSERT INTO admin_audit_logs (admin_user_id, admin_username_at_action, action_type, target_user_id, 
@@ -837,160 +820,89 @@ def check_table_exists(table_name):
     print(f"DEBUG: check_table_exists('{table_name}') - Verificando se a tabela existe...")
     try:
         with DBConnectionManager(dictionary=True) as cursor_db:
-            if DB_TYPE == 'postgresql':
-                # Verifica se a tabela existe em minúsculas (comportamento padrão do PG)
-                cursor_db.execute(f"SELECT to_regclass('{table_name}') IS NOT NULL AS exists_table;")
-                result_default_case = cursor_db.fetchone()
-                exists_default = result_default_case['exists_table'] if result_default_case else False
+            # Verifica se a tabela existe em minúsculas (comportamento padrão do PG)
+            cursor_db.execute(f"SELECT to_regclass('{table_name}') IS NOT NULL AS exists_table;")
+            result_default_case = cursor_db.fetchone()
+            exists_default = result_default_case['exists_table'] if result_default_case else False
 
-                # Verifica se a tabela existe com o nome exato (se foi criada com aspas duplas)
-                cursor_db.execute(f"SELECT to_regclass('\"{table_name}\"') IS NOT NULL AS exists_table_quoted;")
-                result_quoted_case = cursor_db.fetchone()
-                exists_quoted = result_quoted_case['exists_table_quoted'] if result_quoted_case else False
+            # Verifica se a tabela existe com o nome exato (se foi criada com aspas duplas)
+            cursor_db.execute(f"SELECT to_regclass('\"{table_name}\"') IS NOT NULL AS exists_table_quoted;")
+            result_quoted_case = cursor_db.fetchone()
+            exists_quoted = result_quoted_case['exists_table_quoted'] if result_quoted_case else False
 
-                exists = exists_default or exists_quoted
-                print(f"DEBUG: check_table_exists('{table_name}') - Resultado: (padrão/minúsculas): {exists_default}, (com aspas/exato): {exists_quoted}, Final: {exists}")
-                return exists
-            else: # MySQL
-                cursor_db.execute(f"SELECT COUNT(*) AS exists_table FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '{table_name}';")
-                result = cursor_db.fetchone()
-                exists = result['exists_table']
-                print(f"DEBUG: check_table_exists('{table_name}') - Resultado: {exists}")
-                return exists
+            exists = exists_default or exists_quoted
+            print(f"DEBUG: check_table_exists('{table_name}') - Resultado: (padrão/minúsculas): {exists_default}, (com aspas/exato): {exists_quoted}, Final: {exists}")
+            return exists
     except Exception as e:
         print(f"ERRO: Falha ao verificar a existência da tabela '{table_name}': {e}")
         return False
 
-# --- FUNÇÃO: Criar tabelas se não existirem ---
+# --- FUNÇÃO: Criar tabelas se não existirem (APENAS PostgreSQL) ---
 def create_tables_if_not_exist():
     print("DEBUG: Iniciando verificação e criação de tabelas...")
     try:
         with DBConnectionManager() as cursor_db:
-            if DB_TYPE == 'postgresql':
-                print("DEBUG: Criando tabelas para PostgreSQL...")
-                cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        id SERIAL PRIMARY KEY,
-                        username VARCHAR(80) UNIQUE NOT NULL,
-                        password_hash VARCHAR(255) NOT NULL,
-                        full_name VARCHAR(255) NOT NULL,
-                        email VARCHAR(255) UNIQUE NOT NULL,
-                        contact_number VARCHAR(20),
-                        is_admin BOOLEAN DEFAULT FALSE NOT NULL,
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-                cursor_db.connection.commit()
+            print("DEBUG: Criando tabelas para PostgreSQL...")
+            cursor_db.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(80) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    full_name VARCHAR(255) NOT NULL,
+                    email VARCHAR(255) UNIQUE NOT NULL,
+                    contact_number VARCHAR(20),
+                    is_admin BOOLEAN DEFAULT FALSE NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            cursor_db.connection.commit()
 
-                cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS transacoes (
-                        id SERIAL PRIMARY KEY,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        data_transacao DATE NOT NULL,
-                        hora_transacao TIME,
-                        simbolo_ativo VARCHAR(20) NOT NULL,
-                        quantidade DECIMAL(18, 8) NOT NULL,
-                        preco_unitario DECIMAL(18, 8) NOT NULL,
-                        tipo_operacao VARCHAR(10) NOT NULL,
-                        custos_taxas DECIMAL(10, 2) DEFAULT 0.00,
-                        observacoes TEXT,
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-                cursor_db.connection.commit()
+            cursor_db.execute("""
+                CREATE TABLE IF NOT EXISTS transacoes (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    data_transacao DATE NOT NULL,
+                    hora_transacao TIME,
+                    simbolo_ativo VARCHAR(20) NOT NULL,
+                    quantidade DECIMAL(18, 8) NOT NULL,
+                    preco_unitario DECIMAL(18, 8) NOT NULL,
+                    tipo_operacao VARCHAR(10) NOT NULL,
+                    custos_taxas DECIMAL(10, 2) DEFAULT 0.00,
+                    observacoes TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            cursor_db.connection.commit()
 
-                cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS alertas (
-                        id SERIAL PRIMARY KEY,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        simbolo_ativo VARCHAR(20) NOT NULL,
-                        preco_alvo DECIMAL(10, 2) NOT NULL,
-                        tipo_alerta VARCHAR(10) NOT NULL, -- 'ACIMA' ou 'ABAIXO'
-                        status VARCHAR(20) DEFAULT 'ATIVO' NOT NULL, -- 'ATIVO', 'DISPARADO', 'CANCELADO'
-                        data_criacao TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                        data_disparo TIMESTAMP WITH TIME ZONE
-                    );
-                """)
-                cursor_db.connection.commit()
+            cursor_db.execute("""
+                CREATE TABLE IF NOT EXISTS alertas (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    simbolo_ativo VARCHAR(20) NOT NULL,
+                    preco_alvo DECIMAL(10, 2) NOT NULL,
+                    tipo_alerta VARCHAR(10) NOT NULL, -- 'ACIMA' ou 'ABAIXO'
+                    status VARCHAR(20) DEFAULT 'ATIVO' NOT NULL, -- 'ATIVO', 'DISPARADO', 'CANCELADO'
+                    data_criacao TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    data_disparo TIMESTAMP WITH TIME ZONE
+                );
+            """)
+            cursor_db.connection.commit()
 
-                cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS admin_audit_logs (
-                        id SERIAL PRIMARY KEY,
-                        admin_user_id INTEGER NOT NULL,
-                        admin_username_at_action VARCHAR(80) NOT NULL,
-                        action_type VARCHAR(50) NOT NULL,
-                        target_user_id INTEGER,
-                        target_username_at_action VARCHAR(80),
-                        details JSONB, -- PostgreSQL uses JSONB for JSON data
-                        timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-                cursor_db.connection.commit()
-                
-            else: # MySQL
-                print("DEBUG: Criando tabelas para MySQL...")
-                cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        username VARCHAR(80) UNIQUE NOT NULL,
-                        password_hash VARCHAR(255) NOT NULL,
-                        full_name VARCHAR(255) NOT NULL,
-                        email VARCHAR(255) UNIQUE NOT NULL,
-                        contact_number VARCHAR(20),
-                        is_admin BOOLEAN DEFAULT FALSE NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-                cursor_db.connection.commit()
-
-                cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS transacoes (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        user_id INT NOT NULL,
-                        data_transacao DATE NOT NULL,
-                        hora_transacao TIME,
-                        simbolo_ativo VARCHAR(20) NOT NULL,
-                        quantidade DECIMAL(18, 8) NOT NULL,
-                        preco_unitario DECIMAL(18, 8) NOT NULL,
-                        tipo_operacao VARCHAR(10) NOT NULL,
-                        custos_taxas DECIMAL(10, 2) DEFAULT 0.00,
-                        observacoes TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                    );
-                """)
-                cursor_db.connection.commit()
-
-                cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS alertas (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        user_id INT NOT NULL,
-                        simbolo_ativo VARCHAR(20) NOT NULL,
-                        preco_alvo DECIMAL(10, 2) NOT NULL,
-                        tipo_alerta VARCHAR(10) NOT NULL,
-                        status VARCHAR(20) DEFAULT 'ATIVO' NOT NULL,
-                        data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        data_disparo TIMESTAMP NULL,
-                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                    );
-                """)
-                cursor_db.connection.commit()
-
-                cursor_db.execute("""
-                    CREATE TABLE IF NOT EXISTS admin_audit_logs (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        admin_user_id INT NOT NULL,
-                        admin_username_at_action VARCHAR(80) NOT NULL,
-                        action_type VARCHAR(50) NOT NULL,
-                        target_user_id INT,
-                        target_username_at_action VARCHAR(80),
-                        details JSON,
-                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-                cursor_db.connection.commit()
-
-            print("DEBUG: Todas as operações CREATE TABLE IF NOT EXISTS foram enviadas ao banco de dados.")
+            cursor_db.execute("""
+                CREATE TABLE IF NOT EXISTS admin_audit_logs (
+                    id SERIAL PRIMARY KEY,
+                    admin_user_id INTEGER NOT NULL,
+                    admin_username_at_action VARCHAR(80) NOT NULL,
+                    action_type VARCHAR(50) NOT NULL,
+                    target_user_id INTEGER,
+                    target_username_at_action VARCHAR(80),
+                    details JSONB, -- PostgreSQL uses JSONB for JSON data
+                    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            cursor_db.connection.commit()
+            
+            print("DEBUG: Todas as operações CREATE TABLE IF NOT EXISTS foram enviadas ao banco de dados PostgreSQL.")
     except Exception as e:
         print(f"ERRO CRÍTICO: Falha ao tentar verificar/criar tabelas: {e}")
         raise # Re-lança a exceção para que a Render saiba que a inicialização falhou
@@ -1012,56 +924,6 @@ def index():
     posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado = calcular_posicoes_carteira(user_id)
     print(f"DEBUG: index route - Posições da carteira (antes do template): {posicoes}")
     print(f"DEBUG: index route - Total valor carteira (antes do template): {total_valor_carteira}")
-
-    # Gráfico de Pizza
-    chart_labels = []
-    chart_values = []
-    for simbolo, dados in posicoes.items():
-        if dados['valor_atual'] > 0:
-            chart_labels.append(dados['nome_popular']) # Use nome amigável para o label
-            chart_values.append(dados['valor_atual'])
-
-    pie_chart_json = None
-    if chart_labels:
-        fig_pie = go.Figure(data=[go.Pie(labels=chart_labels, values=chart_values, hole=.3)])
-        fig_pie.update_layout(
-            title_text='Alocação da Carteira por Ativo',
-            title_font_size=20, showlegend=True, margin=dict(l=20, r=20, t=50, b=20),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="#333"), height=350
-        )
-        pie_chart_json = json.dumps(fig_pie, cls=plotly.utils.PlotlyJSONEncoder)
-        print(f"DEBUG: index route - Pie chart JSON gerado.")
-    else:
-        print(f"DEBUG: index route - Nenhum dado para o gráfico de pizza. Labels: {chart_labels}, Values: {chart_values}")
-
-
-    # Gráfico de Barras Lucro/Prejuízo Não Realizado
-    profit_loss_labels = []
-    profit_loss_values = []
-    profit_loss_colors = []
-
-    for simbolo, dados in posicoes.items():
-        if dados['lucro_prejuizo_nao_realizado'] is not None:
-            profit_loss_labels.append(dados['nome_popular']) # Use nome amigável para o label
-            profit_loss_values.append(dados['lucro_prejuizo_nao_realizado'])
-            profit_loss_colors.append('green' if dados['lucro_prejuizo_nao_realizado'] >= 0 else 'red')
-
-    bar_chart_json = None
-    if profit_loss_labels:
-        bar_fig = go.Figure(data=[
-            go.Bar(x=profit_loss_labels, y=profit_loss_values, marker_color=profit_loss_colors)
-        ])
-        bar_fig.update_layout(
-            title_text='Lucro/Prejuízo Não Realizado por Ativo',
-            title_font_size=20, xaxis_title='Ativo', yaxis_title='Lucro/Prejuízo',
-            margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)', font=dict(color="#333"), height=350
-        )
-        bar_chart_json = json.dumps(bar_fig, cls=plotly.utils.PlotlyJSONEncoder)
-        print(f"DEBUG: index route - Bar chart JSON gerado.")
-    else:
-        print(f"DEBUG: index route - Nenhum dado para o gráfico de barras. Labels: {profit_loss_labels}, Values: {profit_loss_values}")
-
 
     # Notícias
     all_news = []
@@ -1134,8 +996,6 @@ def index():
                            total_lucro_nao_realizado=total_lucro_nao_realizado,
                            total_prejuizo_nao_realizado=total_prejuizo_nao_realizado,
                            all_news=all_news,
-                           pie_chart_json=pie_chart_json,
-                           bar_chart_json=bar_chart_json,
                            transacoes=transacoes,
                            total_transacoes=total_transacoes,
                            data_inicio=data_inicio,
@@ -1190,20 +1050,12 @@ def register():
                 is_admin = True
 
             with DBConnectionManager() as cursor_db:
-                if DB_TYPE == 'postgresql':
-                    sql = """
-                    INSERT INTO users (username, password_hash, full_name, email, contact_number, is_admin, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
-                    """
-                    cursor_db.execute(sql, (username, hashed_password, full_name, email, contact_number, is_admin, datetime.datetime.now()))
-                    new_user_id = cursor_db.fetchone()[0]
-                else: # MySQL
-                    sql = """
-                    INSERT INTO users (username, password_hash, full_name, email, contact_number, is_admin, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """
-                    cursor_db.execute(sql, (username, hashed_password, full_name, email, contact_number, is_admin, datetime.datetime.now()))
-                    new_user_id = cursor_db.lastrowid
+                sql = """
+                INSERT INTO users (username, password_hash, full_name, email, contact_number, is_admin, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+                """
+                cursor_db.execute(sql, (username, hashed_password, full_name, email, contact_number, is_admin, datetime.datetime.now()))
+                new_user_id = cursor_db.fetchone()[0] # Para PostgreSQL, use fetchone()[0] para RETURNING id
 
                 flash('Registo bem-sucedido! Pode agora fazer login.', 'success')
 
@@ -1600,432 +1452,4 @@ def edit_transaction(transaction_id):
 
         if quantidade <= 0 or preco_unitario <= 0:
             flash('Quantidade e Preço Unitário devem ser maiores que zero.', 'danger')
-            transaction['data_transacao_formatted'] = data_transacao_str
-            transaction['hora_transacao_formatted'] = hora_transacao_str
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
-            transaction['quantidade'] = quantidade
-            transaction['preco_unitario'] = preco_unitario
-            transaction['custos_taxas'] = custos_taxas
-            transaction['observacoes'] = observacoes
-            return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
-
-        simbolo_ativo_yf = SYMBOL_MAPPING.get(final_simbolo_para_processamento.upper(), final_simbolo_para_processamento)
-        if simbolo_ativo_yf == final_simbolo_para_processamento and \
-           not any(c in final_simbolo_para_processamento for c in ['^', '-', '=']) and \
-           not any(final_simbolo_para_processamento.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
-            if 4 <= len(final_simbolo_para_processamento) <= 6 and final_simbolo_para_processamento.isalnum():
-                simbolo_ativo_yf = f"{final_simbolo_para_processamento.upper()}.SA"
-        simbolo_ativo_yf = simbolo_ativo_yf.upper()
-
-        try:
-            with DBConnectionManager() as cursor_db:
-                sql = """
-                UPDATE transacoes
-                SET data_transacao = %s, hora_transacao = %s, simbolo_ativo = %s, quantidade = %s,
-                    preco_unitario = %s, tipo_operacao = %s, custos_taxas = %s, observacoes = %s
-                WHERE id = %s AND user_id = %s
-                """
-                cursor_db.execute(sql, (
-                    data_transacao, hora_transacao, simbolo_ativo_yf, quantidade,
-                    preco_unitario, tipo_operacao, custos_taxas, observacoes,
-                    transaction_id, user_id
-                ))
-                flash('Transação atualizada com sucesso!', 'success')
-                return redirect(url_for('index'))
-        except Exception as e:
-            flash(f'Ocorreu um erro ao atualizar a transação. Erro: {e}', 'danger')
-            print(f"Erro ao atualizar transação: {e}")
-            transaction['data_transacao_formatted'] = data_transacao_str
-            transaction['hora_transacao_formatted'] = hora_transacao_str
-            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
-            transaction['quantidade'] = quantidade
-            transaction['preco_unitario'] = preco_unitario
-            transaction['custos_taxas'] = custos_taxas
-            transaction['observacoes'] = observacoes
-            return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
-
-
-    # Esta parte do código é executada para GET requests (quando a página é carregada)
-    # ou se houve um POST com erro de validação que levou ao re-render.
-    if 'data_transacao' in transaction and transaction['data_transacao']:
-        transaction['data_transacao_formatted'] = transaction['data_transacao'].strftime('%Y-%m-%d')
-    else:
-        transaction['data_transacao_formatted'] = None # Garante que a chave existe
-
-    if 'hora_transacao' in transaction and transaction['hora_transacao']:
-        # psycopg2 pode retornar timedelta para TIME, mysql.connector retorna datetime.time
-        if isinstance(transaction['hora_transacao'], datetime.timedelta):
-            total_seconds = int(transaction['hora_transacao'].total_seconds())
-            hours, remainder = divmod(total_seconds, 3600)
-            minutes, _ = divmod(remainder, 60)
-            transaction['hora_transacao_formatted'] = f"{hours:02d}:{minutes:02d}"
-        elif isinstance(transaction['hora_transacao'], datetime.time):
-            transaction['hora_transacao_formatted'] = transaction['hora_transacao'].strftime('%H:%M')
-        else:
-            transaction['hora_transacao_formatted'] = None
-    else:
-        transaction['hora_transacao_formatted'] = None # Garante que a chave existe
-
-    # Define simbolo_ativo_display para o template
-    transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
-    
-    print(f"DEBUG: edit_transaction - Transaction object antes de renderizar template: {transaction}")
-    print(f"DEBUG: Símbolo de exibição no template: {transaction.get('simbolo_ativo_display')}")
-    print(f"DEBUG: Símbolo YF no template: {transaction.get('simbolo_ativo')}")
-
-
-    return render_template('editar_transacao.html',
-                           user_name=user_name,
-                           transaction=transaction,
-                           symbols=symbols)
-
-@app.route('/delete_transaction/<int:transaction_id>', methods=['POST'])
-@login_required
-def delete_transaction(transaction_id):
-    user_id = session.get('user_id')
-    try:
-        with DBConnectionManager() as cursor_db:
-            cursor_db.execute("DELETE FROM transacoes WHERE id = %s AND user_id = %s", (transaction_id, user_id))
-            if cursor_db.rowcount > 0:
-                flash('Transação excluída com sucesso.', 'success')
-            else:
-                flash('Transação não encontrada ou você não tem permissão para excluí-la.', 'danger')
-    except Exception as e:
-        flash(f'Ocorreu um erro ao excluir a transação. Erro: {e}', 'danger')
-        print(f"Erro ao excluir transação: {e}")
-    return redirect(url_for('index'))
-
-@app.route('/admin/dashboard')
-@login_required
-@admin_required
-def admin_dashboard():
-    users = get_all_users()
-    admin_count = get_admin_count()
-    return render_template('admin_dashboard.html', users=users, admin_count=admin_count)
-
-@app.route('/admin/toggle_admin/<int:user_id>', methods=['POST'])
-@login_required
-@admin_required
-def toggle_admin(user_id):
-    if user_id == session.get('user_id'):
-        flash('Você não pode alterar seu próprio status de administrador.', 'danger')
-        return redirect(url_for('admin_dashboard'))
-
-    target_user = get_user_by_id(user_id)
-    if not target_user:
-        flash('Utilizador não encontrado.', 'danger')
-        return redirect(url_for('admin_dashboard'))
-
-    if target_user['is_admin'] and get_admin_count() <= 1:
-        flash('Não é possível remover o último administrador do sistema.', 'danger')
-        return redirect(url_for('admin_dashboard'))
-
-    new_status = not target_user['is_admin']
-
-    if toggle_user_admin_status(user_id, new_status):
-        action = 'PROMOVIDO_A_ADMIN' if new_status else 'REMOVIDO_DE_ADMIN'
-        admin_user_id = session.get('user_id')
-        log_admin_action(admin_user_id, action, target_user_id=user_id, details={'new_status': new_status})
-        flash(f"Status de administrador de '{target_user['username']}' alterado para {'Admin' if new_status else 'Utilizador Comum'}.", 'success')
-    else:
-        flash('Ocorreu um erro ao alterar o status de administrador.', 'danger')
-    return redirect(url_for('admin_dashboard'))
-
-@app.route('/admin/delete_user/<int:user_id>', methods=['POST'])
-@login_required
-@admin_required
-def delete_user(user_id):
-    if user_id == session.get('user_id'):
-        flash('Você não pode excluir sua própria conta.', 'danger')
-        return redirect(url_for('admin_dashboard'))
-
-    target_user = get_user_by_id(user_id)
-    if not target_user:
-        flash('Utilizador não encontrado.', 'danger')
-        return redirect(url_for('admin_dashboard'))
-
-    if target_user['is_admin'] and get_admin_count() <= 1:
-        flash('Não é possível excluir o último administrador do sistema.', 'danger')
-        return redirect(url_for('admin_dashboard'))
-
-    admin_user_id = session.get('user_id')
-    log_admin_action(admin_user_id, 'EXCLUSAO_UTILIZADOR', target_user_id=user_id, details={'username_alvo': target_user['username']})
-
-    if delete_user_from_db(user_id):
-        flash(f"Utilizador '{target_user['username']}' e todas as suas transações foram excluídos com sucesso.", 'success')
-    else:
-        flash('Ocorreu um erro ao excluir o utilizador.', 'danger')
-    return redirect(url_for('admin_dashboard'))
-
-@app.route('/admin/reset_password/<int:user_id>', methods=['POST'])
-@login_required
-@admin_required
-def reset_password(user_id):
-    if user_id == session.get('user_id'):
-        flash('Você não pode redefinir sua própria palavra-passe por aqui.', 'danger')
-        return redirect(url_for('admin_dashboard'))
-
-    new_password = request.form.get('new_password')
-    if not new_password or len(new_password) < 6:
-        flash('A nova palavra-passe deve ter pelo menos 6 caracteres.', 'danger')
-        return redirect(url_for('admin_dashboard'))
-
-    target_user = get_user_by_id(user_id)
-    if not target_user:
-        flash('Utilizador não encontrado.', 'danger')
-        return redirect(url_for('admin_dashboard'))
-
-    if update_user_password(user_id, new_password):
-        admin_user_id = session.get('user_id')
-        log_admin_action(admin_user_id, 'REDEFINICAO_SENHA_UTILIZADOR', target_user_id=user_id, details={'username_alvo': target_user['username']})
-        flash(f"Palavra-passe de '{target_user['username']}' redefinida com sucesso.", 'success')
-    else:
-        flash('Ocorreu um erro ao redefinir a palavra-passe.', 'danger')
-    return redirect(url_for('admin_dashboard'))
-
-
-@app.route('/admin/audit_logs')
-@login_required
-@admin_required
-def admin_audit_logs():
-    logs = []
-    try:
-        with DBConnectionManager(dictionary=True) as cursor_db:
-            cursor_db.execute("SELECT * FROM admin_audit_logs ORDER BY timestamp DESC")
-            logs = cursor_db.fetchall()
-            for log in logs:
-                if log['details']:
-                    if isinstance(log['details'], dict):
-                        log['details_parsed'] = log['details']
-                    else:
-                        try:
-                            log['details_parsed'] = json.loads(log['details'])
-                        except json.JSONDecodeError:
-                            log['details_parsed'] = {}
-                else:
-                    log['details_parsed'] = {}
-    except Exception as e:
-        flash(f"Erro ao carregar logs de auditoria: {e}", "danger")
-        print(f"Erro ao carregar logs de auditoria: {e}")
-    return render_template('admin_audit_logs.html', logs=logs)
-
-@app.route('/profile', methods=['GET', 'POST'])
-@login_required
-def profile():
-    user_id = session.get('user_id')
-    user = get_user_by_id(user_id)
-
-    if not user:
-        flash('Usuário não encontrado.', 'danger')
-        return redirect(url_for('index'))
-
-    if request.method == 'POST':
-        full_name = request.form['full_name']
-        email = request.form['email']
-        contact_number = request.form.get('contact_number')
-
-        if not full_name or not email:
-            flash('Nome completo e email são obrigatórios.', 'danger')
-            return render_template('profile.html', user=user)
-
-        user_with_same_email = get_user_by_email(email)
-        if user_with_same_email and user_with_same_email['id'] != user_id:
-            flash('Este endereço de email já está registado por outro utilizador.', 'danger')
-            return render_template('profile.html', user=user)
-
-        if update_user_profile_data(user_id, full_name, email, contact_number):
-            flash('Perfil atualizado com sucesso!', 'success')
-            return redirect(url_for('profile'))
-        else:
-            flash('Ocorreu um erro ao atualizar o perfil.', 'danger')
-
-    return render_template('profile.html', user=user)
-
-@app.route('/profile/change_password', methods=['POST'])
-@login_required
-def change_password():
-    user_id = session.get('user_id')
-    current_password = request.form['current_password']
-    new_password = request.form['new_password']
-    confirm_new_password = request.form['confirm_new_password']
-
-    user = get_user_by_id(user_id)
-    if not user or not check_password_hash(user['password_hash'], current_password):
-        flash('Palavra-passe atual incorreta.', 'danger')
-        return redirect(url_for('profile'))
-
-    if new_password != confirm_new_password:
-        flash('A nova palavra-passe e a confirmação não coincidem.', 'danger')
-        return redirect(url_for('profile'))
-
-    if len(new_password) < 6:
-        flash('A nova palavra-passe deve ter pelo menos 6 caracteres.', 'danger')
-        return redirect(url_for('profile'))
-
-    if update_user_password(user_id, new_password):
-        flash('Palavra-passe atualizada com sucesso!', 'success')
-    else:
-        flash('Ocorreu um erro ao atualizar a palavra-passe.', 'danger')
-
-    return redirect(url_for('profile'))
-
-# --- ROTAS E FUNÇÕES PARA ALERTAS DE PREÇO ---
-@app.route('/adicionar_alerta', methods=['POST'])
-@login_required
-def adicionar_alerta():
-    user_id = session.get('user_id')
-    simbolo_ativo = request.form['simbolo_ativo'].upper()
-    preco_alvo_str = request.form['preco_alvo']
-    tipo_alerta = request.form['tipo_alerta']
-
-    try:
-        preco_alvo = decimal.Decimal(preco_alvo_str)
-        if preco_alvo <= 0:
-            flash('O preço alvo deve ser maior que zero.', 'danger')
-            return redirect(url_for('index'))
-    except decimal.InvalidOperation:
-        flash('Preço Alvo deve ser um número válido.', 'danger')
-        return redirect(url_for('index'))
-
-    simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo, simbolo_ativo)
-    if simbolo_ativo_yf == simbolo_ativo and \
-       not any(c in simbolo_ativo for c in ['^', '-', '=']) and \
-       not any(simbolo_ativo.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
-        if 4 <= len(simbolo_ativo) <= 6 and simbolo_ativo.isalnum():
-            simbolo_ativo_yf = f"{simbolo_ativo.upper()}.SA"
-    simbolo_ativo_yf = simbolo_ativo_yf.upper()
-
-    try:
-        with DBConnectionManager() as cursor_db:
-            sql = """
-            INSERT INTO alertas (user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """
-            cursor_db.execute(sql, (user_id, simbolo_ativo_yf, preco_alvo, tipo_alerta, 'ATIVO', datetime.datetime.now()))
-            flash('Alerta de preço adicionado com sucesso!', 'success')
-    except Exception as e:
-        flash(f'Ocorreu um erro ao adicionar o alerta de preço. Erro: {e}', 'danger')
-        print(f"Erro ao adicionar alerta de preço: {e}")
-    return redirect(url_for('index'))
-
-@app.route('/excluir_alerta', methods=['POST'])
-@login_required
-def excluir_alerta():
-    user_id = session.get('user_id')
-    alert_id = request.form.get('id', type=int)
-
-    if not alert_id:
-        flash('ID do alerta não fornecido.', 'danger')
-        return redirect(url_for('index'))
-
-    try:
-        with DBConnectionManager() as cursor_db:
-            cursor_db.execute("DELETE FROM alertas WHERE id = %s AND user_id = %s", (alert_id, user_id))
-            if cursor_db.rowcount > 0:
-                flash('Alerta de preço excluído com sucesso.', 'success')
-            else:
-                flash('Alerta não encontrado ou você não tem permissão para excluí-lo.', 'danger')
-    except Exception as e:
-        flash(f'Ocorreu um erro ao excluir o alerta de preço. Erro: {e}', 'danger')
-        print(f"Erro ao excluir alerta de preço: {e}")
-    return redirect(url_for('index'))
-
-# --- ROTA PARA O GRÁFICO HISTÓRICO NO MODAL ---
-@app.route('/get_historical_chart_data/<simbolo>')
-@login_required
-def get_historical_chart_data(simbolo):
-    simbolo_yf = SYMBOL_MAPPING.get(simbolo.upper(), simbolo)
-    if simbolo_yf == simbolo and \
-       not any(c in simbolo for c in ['^', '-', '=']) and \
-       not any(simbolo.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
-        if 4 <= len(simbolo) <= 6 and simbolo.isalnum():
-            simbolo_yf = f"{simbolo.upper()}.SA"
-
-    cache_key = (simbolo_yf, "1y", "1d")
-
-    if is_cache_fresh(historical_chart_cache, cache_key, HISTORICAL_CHART_CACHE_TTL):
-        print(f"DEBUG: Dados históricos para {simbolo_yf} encontrados no cache.")
-        return jsonify(historical_chart_cache[cache_key]['data'])
-
-    try:
-        df_hist = get_historical_prices_yfinance_cached(simbolo_yf, period="1y", interval="1d")
-        
-        if df_hist.empty:
-            print(f"DEBUG: Não foi possível obter dados históricos para {simbolo_yf}.")
-            return jsonify({'error': 'Não foi possível obter dados históricos para este símbolo.'}), 404
-
-        fig = go.Figure(data=[go.Candlestick(x=df_hist.index,
-                        open=df_hist['Open'],
-                        high=df_hist['High'],
-                        low=df_hist['Low'],
-                        close=df_hist['Close'])])
-
-        fig.update_layout(
-            title=f'Preços Históricos de {REVERSE_SYMBOL_MAPPING.get(simbolo_yf, simbolo_yf)} ({simbolo_yf})',
-            yaxis_title='Preço (R$)',
-            xaxis_title='Data',
-            xaxis_rangeslider_visible=False,
-            height=450,
-            margin=dict(l=40, r=40, t=80, b=40),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color="#333")
-        )
-
-        plot_json = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-        
-        response_data = {'simbolo': simbolo, 'plot_json': plot_json}
-        historical_chart_cache[cache_key] = {'data': response_data, 'timestamp': datetime.datetime.now()}
-        print(f"DEBUG: Dados históricos para {simbolo_yf} obtidos e cacheados.")
-        return jsonify(response_data)
-
-    except Exception as e:
-        print(f"ERRO ao gerar gráfico histórico para {simbolo_yf}: {e}")
-        return jsonify({'error': f'Erro interno ao gerar o gráfico: {e}'}), 500
-
-
-@app.route('/predict_price/<simbolo>')
-@login_required
-def predict_price_api(simbolo):
-    predicted_price = get_predicted_price_for_display(simbolo)
-    if predicted_price is not None:
-        return jsonify({'simbolo': simbolo, 'predicted_price': predicted_price})
-    else:
-        return jsonify({'error': 'Não foi possível obter previsão para este símbolo.', 'simbolo': simbolo}), 404
-
-print("DEBUG: Entrando no bloco if __name__ == '__main__':")
-if __name__ == '__main__':
-    # Chama a função para criar tabelas no início
-    try:
-        create_tables_if_not_exist()
-        print("DEBUG: create_tables_if_not_exist() finalizada. Verificando a existência das tabelas agora...")
-        
-        # Verificações pós-criação
-        if check_table_exists('users'):
-            print("DEBUG: Tabela 'users' confirmada após a tentativa de criação.")
-        else:
-            print("ERRO: Tabela 'users' NÃO EXISTE após a tentativa de criação!")
-        
-        if check_table_exists('transacoes'):
-            print("DEBUG: Tabela 'transacoes' confirmada após a tentativa de criação.")
-        else:
-            print("ERRO: Tabela 'transacoes' NÃO EXISTE após a tentativa de criação!")
-
-        if check_table_exists('alertas'):
-            print("DEBUG: Tabela 'alertas' confirmada após a tentativa de criação.")
-        else:
-            print("ERRO: Tabela 'alertas' NÃO EXISTE após a tentativa de criação!")
-        
-        if check_table_exists('admin_audit_logs'):
-            print("DEBUG: Tabela 'admin_audit_logs' confirmada após a tentativa de criação.")
-        else:
-            print("ERRO: Tabela 'admin_audit_logs' NÃO EXISTE após a tentativa de criação!")
-
-    except Exception as startup_error:
-        print(f"ERRO CRÍTICO NA INICIALIZAÇÃO: A aplicação falhou ao iniciar devido a problemas no banco de dados: {startup_error}")
-        import sys
-        sys.exit(1) # Força a saída se a criação das tabelas falhar
-
-    port = int(os.environ.get("PORT", 5000))
-    print(f"DEBUG: Iniciando Flask app em host 0.0.0.0, porta {port}")
-    app.run(debug=True, host='0.0.0.0', port=port)
+            transact
