@@ -169,23 +169,21 @@ def floatformat(value, precision=2):
 DATABASE_URL = os.getenv('DATABASE_URL')
 
 if not DATABASE_URL:
-    raise ValueError("A variável de ambiente 'DATABASE_URL' não está definida. Por favor, defina-a para a conexão PostgreSQL.")
-
-DB_TYPE = 'postgresql' # Força o tipo de DB para PostgreSQL
+    raise ValueError("A variável de ambiente 'DATABASE_URL' para PostgreSQL não está definida. Por favor, defina-a.")
 print("DEBUG: Usando conexão PostgreSQL (DATABASE_URL detectada).")
 
 
-# --- Context Manager para Conexões (APENAS PostgreSQL) ---
+# --- Context Manager para Conexões PostgreSQL ---
 class DBConnectionManager:
     def __init__(self, dictionary=False, buffered=False):
         self.conn = None
         self.cursor = None
         self.dictionary = dictionary
-        self.buffered = buffered # Não é diretamente usado no Psycopg2 para o cursor_factory, mas mantido por compatibilidade
-        self.db_type = DB_TYPE # Sempre 'postgresql'
+        # buffered não é uma opção para psycopg2, mas mantemos para compatibilidade de interface se necessário
+        self.buffered = buffered 
 
     def __enter__(self):
-        print(f"DEBUG: DBConnectionManager - Entrando no contexto ({self.db_type})...")
+        print(f"DEBUG: DBConnectionManager - Entrando no contexto (postgresql, dictionary={self.dictionary})...")
         try:
             import psycopg2
             from urllib.parse import urlparse
@@ -211,7 +209,7 @@ class DBConnectionManager:
             print("DEBUG: DBConnectionManager - Conexão e cursor estabelecidos.")
             return self.cursor
         except Exception as err:
-            print(f"ERRO: DBConnectionManager - Erro ao conectar ao {self.db_type}: {err}")
+            print(f"ERRO: DBConnectionManager - Erro ao conectar ao PostgreSQL: {err}")
             if self.cursor:
                 try: self.cursor.close()
                 except Exception as close_err:
@@ -279,7 +277,7 @@ def admin_required(f):
 # --- Funções Auxiliares para Autenticação e Gestão de Utilizadores ---
 def get_user_by_id(user_id):
     try:
-        # Usar dictionary=True para que os resultados sejam acessíveis por nome de coluna
+        # Usar dictionary=True aqui para garantir que os resultados sejam lidos como dicionários
         with DBConnectionManager(dictionary=True) as cursor_db:
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             cursor_db.execute("SELECT id, username, full_name, email, contact_number, is_admin, created_at FROM users WHERE id = %s", (user_id,))
@@ -292,7 +290,7 @@ def get_user_by_id(user_id):
 
 def get_user_by_username(username):
     try:
-        # Usar dictionary=True para que os resultados sejam acessíveis por nome de coluna
+        # Usar dictionary=True aqui para garantir que os resultados sejam lidos como dicionários
         with DBConnectionManager(dictionary=True) as cursor_db:
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             cursor_db.execute("SELECT id, username, password_hash, full_name, email, contact_number, is_admin FROM users WHERE username = %s", (username,))
@@ -326,7 +324,7 @@ def get_all_users():
         return []
 
     try:
-        # Usar dictionary=True para que os resultados sejam acessíveis por nome de coluna
+        # Usar dictionary=True aqui para garantir que os resultados sejam lidos como dicionários
         with DBConnectionManager(dictionary=True) as cursor_db:
             # Inclui 'full_name', 'email', 'contact_number' na seleção
             sql_query = "SELECT id, username, full_name, email, contact_number, is_admin, created_at FROM users"
@@ -346,7 +344,7 @@ def get_all_users():
 def get_admin_count():
     """Retorna o número total de utilizadores com is_admin = TRUE."""
     try:
-        # Usar dictionary=True para que os resultados sejam acessíveis por nome de coluna
+        # Usar dictionary=True aqui para garantir que os resultados sejam lidos como dicionários
         with DBConnectionManager(dictionary=True) as cursor_db:
             cursor_db.execute("SELECT COUNT(*) as admin_count FROM users WHERE is_admin = TRUE")
             result = cursor_db.fetchone()
@@ -815,7 +813,7 @@ def fetch_news(query):
         return []
 
 
-# --- FUNÇÃO: Verificar se uma tabela existe ---
+# --- FUNÇÃO: Verificar se uma tabela existe (APENAS PostgreSQL) ---
 def check_table_exists(table_name):
     print(f"DEBUG: check_table_exists('{table_name}') - Verificando se a tabela existe...")
     try:
@@ -839,10 +837,9 @@ def check_table_exists(table_name):
 
 # --- FUNÇÃO: Criar tabelas se não existirem (APENAS PostgreSQL) ---
 def create_tables_if_not_exist():
-    print("DEBUG: Iniciando verificação e criação de tabelas...")
+    print("DEBUG: Iniciando verificação e criação de tabelas para PostgreSQL...")
     try:
         with DBConnectionManager() as cursor_db:
-            print("DEBUG: Criando tabelas para PostgreSQL...")
             cursor_db.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
@@ -902,7 +899,7 @@ def create_tables_if_not_exist():
             """)
             cursor_db.connection.commit()
             
-            print("DEBUG: Todas as operações CREATE TABLE IF NOT EXISTS foram enviadas ao banco de dados PostgreSQL.")
+            print("DEBUG: Todas as operações CREATE TABLE IF NOT EXISTS foram enviadas ao banco de dados.")
     except Exception as e:
         print(f"ERRO CRÍTICO: Falha ao tentar verificar/criar tabelas: {e}")
         raise # Re-lança a exceção para que a Render saiba que a inicialização falhou
@@ -924,6 +921,7 @@ def index():
     posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado = calcular_posicoes_carteira(user_id)
     print(f"DEBUG: index route - Posições da carteira (antes do template): {posicoes}")
     print(f"DEBUG: index route - Total valor carteira (antes do template): {total_valor_carteira}")
+
 
     # Notícias
     all_news = []
@@ -1055,8 +1053,8 @@ def register():
                 VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                 """
                 cursor_db.execute(sql, (username, hashed_password, full_name, email, contact_number, is_admin, datetime.datetime.now()))
-                new_user_id = cursor_db.fetchone()[0] # Para PostgreSQL, use fetchone()[0] para RETURNING id
-
+                new_user_id = cursor_db.fetchone()[0] # RETURNING id para PostgreSQL
+                
                 flash('Registo bem-sucedido! Pode agora fazer login.', 'success')
 
                 if is_admin:
@@ -1452,4 +1450,388 @@ def edit_transaction(transaction_id):
 
         if quantidade <= 0 or preco_unitario <= 0:
             flash('Quantidade e Preço Unitário devem ser maiores que zero.', 'danger')
-            transact
+            transaction['data_transacao_formatted'] = data_transacao_str
+            transaction['hora_transacao_formatted'] = hora_transacao_str
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
+            transaction['quantidade'] = quantidade
+            transaction['preco_unitario'] = preco_unitario
+            transaction['custos_taxas'] = custos_taxas
+            transaction['observacoes'] = observacoes
+            return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
+
+        simbolo_ativo_yf = SYMBOL_MAPPING.get(final_simbolo_para_processamento.upper(), final_simbolo_para_processamento)
+        if simbolo_ativo_yf == final_simbolo_para_processamento and \
+           not any(c in final_simbolo_para_processamento for c in ['^', '-', '=']) and \
+           not any(final_simbolo_para_processamento.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
+            if 4 <= len(final_simbolo_para_processamento) <= 6 and final_simbolo_para_processamento.isalnum():
+                simbolo_ativo_yf = f"{final_simbolo_para_processamento.upper()}.SA"
+        simbolo_ativo_yf = simbolo_ativo_yf.upper()
+
+        try:
+            with DBConnectionManager() as cursor_db:
+                sql = """
+                UPDATE transacoes
+                SET data_transacao = %s, hora_transacao = %s, simbolo_ativo = %s, quantidade = %s,
+                    preco_unitario = %s, tipo_operacao = %s, custos_taxas = %s, observacoes = %s
+                WHERE id = %s AND user_id = %s
+                """
+                cursor_db.execute(sql, (
+                    data_transacao, hora_transacao, simbolo_ativo_yf, quantidade,
+                    preco_unitario, tipo_operacao, custos_taxas, observacoes,
+                    transaction_id, user_id
+                ))
+                flash('Transação atualizada com sucesso!', 'success')
+                return redirect(url_for('index'))
+        except Exception as e:
+            flash(f'Ocorreu um erro ao atualizar a transação. Erro: {e}', 'danger')
+            print(f"Erro ao atualizar transação: {e}")
+            transaction['data_transacao_formatted'] = data_transacao_str
+            transaction['hora_transacao_formatted'] = hora_transacao_str
+            transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(final_simbolo_para_processamento, final_simbolo_para_processamento)
+            # Passa os valores do formulário para o template para preencher novamente
+            transaction['quantidade'] = quantidade
+            transaction['preco_unitario'] = preco_unitario
+            transaction['custos_taxas'] = custos_taxas
+            transaction['observacoes'] = observacoes
+            return render_template('editar_transacao.html', user_name=user_name, transaction=transaction, symbols=symbols)
+
+
+    # Esta parte do código é executada para GET requests (quando a página é carregada)
+    # ou se houve um POST com erro de validação que levou ao re-render.
+    if 'data_transacao' in transaction and transaction['data_transacao']:
+        transaction['data_transacao_formatted'] = transaction['data_transacao'].strftime('%Y-%m-%d')
+    else:
+        transaction['data_transacao_formatted'] = None # Garante que a chave existe
+
+    if 'hora_transacao' in transaction and transaction['hora_transacao']:
+        # psycopg2 pode retornar timedelta para TIME, mysql.connector retorna datetime.time
+        if isinstance(transaction['hora_transacao'], datetime.timedelta):
+            total_seconds = int(transaction['hora_transacao'].total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            transaction['hora_transacao_formatted'] = f"{hours:02d}:{minutes:02d}"
+        elif isinstance(transaction['hora_transacao'], datetime.time):
+            transaction['hora_transacao_formatted'] = transaction['hora_transacao'].strftime('%H:%M')
+        else:
+            transaction['hora_transacao_formatted'] = None
+    else:
+        transaction['hora_transacao_formatted'] = None # Garante que a chave existe
+
+    # Define simbolo_ativo_display para o template
+    transaction['simbolo_ativo_display'] = REVERSE_SYMBOL_MAPPING.get(transaction['simbolo_ativo'], transaction['simbolo_ativo'])
+    
+    print(f"DEBUG: edit_transaction - Transaction object antes de renderizar template: {transaction}")
+    print(f"DEBUG: Símbolo de exibição no template: {transaction.get('simbolo_ativo_display')}")
+    print(f"DEBUG: Símbolo YF no template: {transaction.get('simbolo_ativo')}")
+
+
+    return render_template('editar_transacao.html',
+                           user_name=user_name,
+                           transaction=transaction,
+                           symbols=symbols)
+
+@app.route('/delete_transaction/<int:transaction_id>', methods=['POST'])
+@login_required
+def delete_transaction(transaction_id):
+    user_id = session.get('user_id')
+    try:
+        with DBConnectionManager() as cursor_db:
+            cursor_db.execute("DELETE FROM transacoes WHERE id = %s AND user_id = %s", (transaction_id, user_id))
+            if cursor_db.rowcount > 0:
+                flash('Transação excluída com sucesso.', 'success')
+            else:
+                flash('Transação não encontrada ou você não tem permissão para excluí-la.', 'danger')
+    except Exception as e:
+        flash(f'Ocorreu um erro ao excluir a transação. Erro: {e}', 'danger')
+        print(f"Erro ao excluir transação: {e}")
+    return redirect(url_for('index'))
+
+@app.route('/admin/dashboard')
+@login_required
+@admin_required
+def admin_dashboard():
+    users = get_all_users()
+    admin_count = get_admin_count()
+    return render_template('admin_dashboard.html', users=users, admin_count=admin_count)
+
+@app.route('/admin/toggle_admin/<int:user_id>', methods=['POST'])
+@login_required
+@admin_required
+def toggle_admin(user_id):
+    if user_id == session.get('user_id'):
+        flash('Você não pode alterar seu próprio status de administrador.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        flash('Utilizador não encontrado.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    if target_user['is_admin'] and get_admin_count() <= 1:
+        flash('Não é possível remover o último administrador do sistema.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    new_status = not target_user['is_admin']
+
+    if toggle_user_admin_status(user_id, new_status):
+        action = 'PROMOVIDO_A_ADMIN' if new_status else 'REMOVIDO_DE_ADMIN'
+        admin_user_id = session.get('user_id')
+        log_admin_action(admin_user_id, action, target_user_id=user_id, details={'new_status': new_status})
+        flash(f"Status de administrador de '{target_user['username']}' alterado para {'Admin' if new_status else 'Utilizador Comum'}.", 'success')
+    else:
+        flash('Ocorreu um erro ao alterar o status de administrador.', 'danger')
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/delete_user/<int:user_id>', methods=['POST'])
+@login_required
+@admin_required
+def delete_user(user_id):
+    if user_id == session.get('user_id'):
+        flash('Você não pode excluir sua própria conta.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        flash('Utilizador não encontrado.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    if target_user['is_admin'] and get_admin_count() <= 1:
+        flash('Não é possível excluir o último administrador do sistema.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    admin_user_id = session.get('user_id')
+    log_admin_action(admin_user_id, 'EXCLUSAO_UTILIZADOR', target_user_id=user_id, details={'username_alvo': target_user['username']})
+
+    if delete_user_from_db(user_id):
+        flash(f"Utilizador '{target_user['username']}' e todas as suas transações foram excluídos com sucesso.", 'success')
+    else:
+        flash('Ocorreu um erro ao excluir o utilizador.', 'danger')
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/reset_password/<int:user_id>', methods=['POST'])
+@login_required
+@admin_required
+def reset_password(user_id):
+    if user_id == session.get('user_id'):
+        flash('Você não pode redefinir sua própria palavra-passe por aqui.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    new_password = request.form.get('new_password')
+    if not new_password or len(new_password) < 6:
+        flash('A nova palavra-passe deve ter pelo menos 6 caracteres.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    target_user = get_user_by_id(user_id)
+    if not target_user:
+        flash('Utilizador não encontrado.', 'danger')
+        return redirect(url_for('admin_dashboard'))
+
+    if update_user_password(user_id, new_password):
+        admin_user_id = session.get('user_id')
+        log_admin_action(admin_user_id, 'REDEFINICAO_SENHA_UTILIZADOR', target_user_id=user_id, details={'username_alvo': target_user['username']})
+        flash(f"Palavra-passe de '{target_user['username']}' redefinida com sucesso.", 'success')
+    else:
+        flash('Ocorreu um erro ao redefinir a palavra-passe.', 'danger')
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/audit_logs')
+@login_required
+@admin_required
+def admin_audit_logs():
+    logs = []
+    try:
+        with DBConnectionManager(dictionary=True) as cursor_db:
+            cursor_db.execute("SELECT * FROM admin_audit_logs ORDER BY timestamp DESC")
+            logs = cursor_db.fetchall()
+            for log in logs:
+                if log['details']:
+                    if isinstance(log['details'], dict):
+                        log['details_parsed'] = log['details']
+                    else:
+                        try:
+                            log['details_parsed'] = json.loads(log['details'])
+                        except json.JSONDecodeError:
+                            log['details_parsed'] = {}
+                else:
+                    log['details_parsed'] = {}
+    except Exception as e:
+        flash(f"Erro ao carregar logs de auditoria: {e}", "danger")
+        print(f"Erro ao carregar logs de auditoria: {e}")
+    return render_template('admin_audit_logs.html', logs=logs)
+
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    user_id = session.get('user_id')
+    user = get_user_by_id(user_id)
+
+    if not user:
+        flash('Usuário não encontrado.', 'danger')
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        full_name = request.form['full_name']
+        email = request.form['email']
+        contact_number = request.form.get('contact_number')
+
+        if not full_name or not email:
+            flash('Nome completo e email são obrigatórios.', 'danger')
+            return render_template('profile.html', user=user)
+
+        user_with_same_email = get_user_by_email(email)
+        if user_with_same_email and user_with_same_email['id'] != user_id:
+            flash('Este endereço de email já está registado por outro utilizador.', 'danger')
+            return render_template('profile.html', user=user)
+
+        if update_user_profile_data(user_id, full_name, email, contact_number):
+            flash('Perfil atualizado com sucesso!', 'success')
+            return redirect(url_for('profile'))
+        else:
+            flash('Ocorreu um erro ao atualizar o perfil.', 'danger')
+
+    return render_template('profile.html', user=user)
+
+@app.route('/profile/change_password', methods=['POST'])
+@login_required
+def change_password():
+    user_id = session.get('user_id')
+    current_password = request.form['current_password']
+    new_password = request.form['new_password']
+    confirm_new_password = request.form['confirm_new_password']
+
+    user = get_user_by_id(user_id)
+    if not user or not check_password_hash(user['password_hash'], current_password):
+        flash('Palavra-passe atual incorreta.', 'danger')
+        return redirect(url_for('profile'))
+
+    if new_password != confirm_new_password:
+        flash('A nova palavra-passe e a confirmação não coincidem.', 'danger')
+        return redirect(url_for('profile'))
+
+    if len(new_password) < 6:
+        flash('A nova palavra-passe deve ter pelo menos 6 caracteres.', 'danger')
+        return redirect(url_for('profile'))
+
+    if update_user_password(user_id, new_password):
+        flash('Palavra-passe atualizada com sucesso!', 'success')
+    else:
+        flash('Ocorreu um erro ao atualizar a palavra-passe.', 'danger')
+
+    return redirect(url_for('profile'))
+
+# --- ROTAS E FUNÇÕES PARA ALERTAS DE PREÇO ---
+@app.route('/adicionar_alerta', methods=['POST'])
+@login_required
+def adicionar_alerta():
+    user_id = session.get('user_id')
+    simbolo_ativo = request.form['simbolo_ativo'].upper()
+    preco_alvo_str = request.form['preco_alvo']
+    tipo_alerta = request.form['tipo_alerta']
+
+    try:
+        preco_alvo = decimal.Decimal(preco_alvo_str)
+        if preco_alvo <= 0:
+            flash('O preço alvo deve ser maior que zero.', 'danger')
+            return redirect(url_for('index'))
+    except decimal.InvalidOperation:
+        flash('Preço Alvo deve ser um número válido.', 'danger')
+        return redirect(url_for('index'))
+
+    simbolo_ativo_yf = SYMBOL_MAPPING.get(simbolo_ativo, simbolo_ativo)
+    if simbolo_ativo_yf == simbolo_ativo and \
+       not any(c in simbolo_ativo for c in ['^', '-', '=']) and \
+       not any(simbolo_ativo.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
+        if 4 <= len(simbolo_ativo) <= 6 and simbolo_ativo.isalnum():
+            simbolo_ativo_yf = f"{simbolo_ativo.upper()}.SA"
+    simbolo_ativo_yf = simbolo_ativo_yf.upper()
+
+    try:
+        with DBConnectionManager() as cursor_db:
+            sql = """
+            INSERT INTO alertas (user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor_db.execute(sql, (user_id, simbolo_ativo_yf, preco_alvo, tipo_alerta, 'ATIVO', datetime.datetime.now()))
+            flash('Alerta de preço adicionado com sucesso!', 'success')
+    except Exception as e:
+        flash(f'Ocorreu um erro ao adicionar o alerta de preço. Erro: {e}', 'danger')
+        print(f"Erro ao adicionar alerta de preço: {e}")
+    return redirect(url_for('index'))
+
+@app.route('/excluir_alerta', methods=['POST'])
+@login_required
+def excluir_alerta():
+    user_id = session.get('user_id')
+    alert_id = request.form.get('id', type=int)
+
+    if not alert_id:
+        flash('ID do alerta não fornecido.', 'danger')
+        return redirect(url_for('index'))
+
+    try:
+        with DBConnectionManager() as cursor_db:
+            cursor_db.execute("DELETE FROM alertas WHERE id = %s AND user_id = %s", (alert_id, user_id))
+            if cursor_db.rowcount > 0:
+                flash('Alerta de preço excluído com sucesso.', 'success')
+            else:
+                flash('Alerta não encontrado ou você não tem permissão para excluí-lo.', 'danger')
+    except Exception as e:
+        flash(f'Ocorreu um erro ao excluir o alerta de preço. Erro: {e}', 'danger')
+        print(f"Erro ao excluir alerta de preço: {e}")
+    return redirect(url_for('index'))
+
+# Rota para obter o histórico de gráficos (ainda presente no app.py, mas não no HTML)
+# Se você quiser remover completamente a funcionalidade do gráfico, esta rota e a função get_historical_chart_data também poderiam ser removidas do app.py.
+@app.route('/get_historical_chart_data/<simbolo>')
+@login_required
+def get_historical_chart_data(simbolo):
+    # Esta rota agora retornará um erro 404, pois os gráficos foram removidos do HTML.
+    # O ideal seria removê-la completamente se a funcionalidade de gráfico não for mais usada.
+    return jsonify({'error': 'Funcionalidade de gráfico removida.'}), 404
+
+@app.route('/predict_price/<simbolo>')
+@login_required
+def predict_price_api(simbolo):
+    predicted_price = get_predicted_price_for_display(simbolo)
+    if predicted_price is not None:
+        return jsonify({'simbolo': simbolo, 'predicted_price': predicted_price})
+    else:
+        return jsonify({'error': 'Não foi possível obter previsão para este símbolo.', 'simbolo': simbolo}), 404
+
+print("DEBUG: Entrando no bloco if __name__ == '__main__':")
+if __name__ == '__main__':
+    # Chama a função para criar tabelas no início
+    try:
+        create_tables_if_not_exist()
+        print("DEBUG: create_tables_if_not_exist() finalizada. Verificando a existência das tabelas agora...")
+        
+        # Verificações pós-criação
+        if check_table_exists('users'):
+            print("DEBUG: Tabela 'users' confirmada após a tentativa de criação.")
+        else:
+            print("ERRO: Tabela 'users' NÃO EXISTE após a tentativa de criação!")
+        
+        if check_table_exists('transacoes'):
+            print("DEBUG: Tabela 'transacoes' confirmada após a tentativa de criação.")
+        else:
+            print("ERRO: Tabela 'transacoes' NÃO EXISTE após a tentativa de criação!")
+
+        if check_table_exists('alertas'):
+            print("DEBUG: Tabela 'alertas' confirmada após a tentativa de criação.")
+        else:
+            print("ERRO: Tabela 'alertas' NÃO EXISTE após a tentativa de criação!")
+        
+        if check_table_exists('admin_audit_logs'):
+            print("DEBUG: Tabela 'admin_audit_logs' confirmada após a tentativa de criação.")
+        else:
+            print("ERRO: Tabela 'admin_audit_logs' NÃO EXISTE após a tentativa de criação!")
+
+    except Exception as startup_error:
+        print(f"ERRO CRÍTICO NA INICIALIZAÇÃO: A aplicação falhou ao iniciar devido a problemas no banco de dados: {startup_error}")
+        import sys
+        sys.exit(1) # Força a saída se a criação das tabelas falhar
+
+    port = int(os.environ.get("PORT", 5000))
+    print(f"DEBUG: Iniciando Flask app em host 0.0.0.0, porta {port}")
+    app.run(debug=True, host='0.0.0.0', port=port)
