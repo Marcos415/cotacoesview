@@ -229,14 +229,14 @@
                                 <td class="py-3 px-4 text-gray-700">{{ dados.quantidade | floatformat(4) }}</td>
                                 <td class="py-3 px-4 text-gray-700">R$ {{ dados.preco_medio | floatformat(2) }}</td>
                                 <td class="py-3 px-4 text-gray-700">
-                                    {% if dados.preco_atual is not None %}
+                                    {% if dados.preco_atual is not none %} {# CORRIGIDO: 'None' para 'none' #}
                                         R$ {{ dados.preco_atual | floatformat(2) }}
                                     {% else %}
                                         N/A
                                     {% endif %}
                                 </td>
                                 <td class="py-3 px-4 text-gray-700">
-                                    {% if dados.preco_previsto is not none %}
+                                    {% if dados.preco_previsto is not none %} {# CORRIGIDO: 'None' para 'none' #}
                                         R$ {{ dados.preco_previsto | floatformat(2) }}
                                     {% else %}
                                         N/A
@@ -244,7 +244,7 @@
                                 </td>
                                 <td class="py-3 px-4 text-gray-700">R$ {{ dados.valor_atual | floatformat(2) }}</td>
                                 <td class="py-3 px-4">
-                                    {% if dados.lucro_prejuizo_nao_realizado is not none %}
+                                    {% if dados.lucro_prejuizo_nao_realizado is not none %} {# CORRIGIDO: 'None' para 'none' #}
                                         <span class="text-sm font-semibold {% if dados.lucro_prejuizo_nao_realizado >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
                                             R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) }}
                                         </span>
