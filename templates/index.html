@@ -948,12 +948,6 @@ no momento.</p>
         const plotlyChartDiv = document.getElementById('plotlyChartDiv');
         const chartLoader = document.querySelector('.chart-loader');
 
-        // Mapeamento de símbolo amigável para ticker (usado para o campo de alerta)
-        // Este JS pode ser atualizado se a lista for dinâmica ou vir do backend via JSON.
-        // Por enquanto, usaremos a lista de mapeamento JS já definida no index.html
-        // ou o REVERSE_SYMBOL_MAPPING do Jinja2 para a exibição.
-        // No JS, para o alerta, o usuário digita o ticker YF diretamente.
-
         function showLoader() {
             plotlyChartDiv.innerHTML = ''; // Clear previous chart
             chartLoader.classList.remove('hidden');
