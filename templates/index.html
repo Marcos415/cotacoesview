@@ -70,9 +70,6 @@
             height: 100%; /* Full height */
             overflow: auto; /* Enable scroll if needed */
             background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
-            /* REMOVIDAS AS LINHAS ABAIXO. ELAS SERÃO ADICIONADAS APENAS VIA JAVASCRIPT QUANDO O MODAL FOR ABERTO. */
-            /* align-items: center; */
-            /* justify-content: center; */
         }
         .modal-content {
             background-color: #fefefe;
@@ -319,38 +316,9 @@
                 <p class="text-gray-600">Nenhum alerta de preço configurado. Adicione um para ser notificado sobre movimentos de preços!</p>
             {% endif %}
         </section>
-
-        <!-- Notícias do Mercado -->
-        <section class="bg-white p-6 rounded-xl shadow-md mb-8">
-            <h2 class="text-2xl font-bold text-gray-800 mb-6">Notícias do Mercado</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {% if all_news %}
-                    {% for news_item in all_news %}
-                    <div class="bg-gray-50 p-4 rounded-lg shadow-sm flex flex-col justify-between">
-                        <div>
-                            <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ news_item.title }}</h3>
-                            <p class="text-gray-600 text-sm mb-3">{{ news_item.description }}</p>
-                        </div>
-                        <div class="flex flex-wrap items-center justify-between text-xs text-gray-500 mt-2">
-                            <span class="mr-2 mb-1 md:mb-0"><i class="fas fa-newspaper mr-1"></i> {{ news_item.source }}</span>
-                            <span class="mr-2 mb-1 md:mb-0"><i class="fas fa-clock mr-1"></i> {{ news_item.date }}</span>
-                            {% if news_item.simbolo_display %}
-                                <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium text-xs">{{ news_item.simbolo_display }}</span>
-                            {% endif %}
-                            <a href="{{ news_item.url }}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline mt-1 md:mt-0">
-                                Ler mais <i class="fas fa-external-link-alt ml-1 text-xs"></i>
-                            </a>
-                        </div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <p class="text-gray-600 col-span-full">Nenhuma notícia disponível no momento.</p>
-                {% endif %}
-            </div>
-        </section>
-
+        
         <!-- Histórico de Transações Recentes (tabela com paginação) -->
-        <section class="bg-white p-6 rounded-xl shadow-md">
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8">
             <h2 class="text-2xl font-bold text-gray-800 mb-6">Histórico de Transações Recentes</h2>
 
             <!-- Formulário de Filtro -->
@@ -482,6 +450,35 @@
             {% else %}
                 <p class="text-gray-600">Nenhuma transação encontrada com os filtros aplicados.</p>
             {% endif %}
+        </section>
+
+        <!-- Notícias do Mercado -->
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Notícias do Mercado</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {% if all_news %}
+                    {% for news_item in all_news %}
+                    <div class="bg-gray-50 p-4 rounded-lg shadow-sm flex flex-col justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ news_item.title }}</h3>
+                            <p class="text-gray-600 text-sm mb-3">{{ news_item.description }}</p>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-between text-xs text-gray-500 mt-2">
+                            <span class="mr-2 mb-1 md:mb-0"><i class="fas fa-newspaper mr-1"></i> {{ news_item.source }}</span>
+                            <span class="mr-2 mb-1 md:mb-0"><i class="fas fa-clock mr-1"></i> {{ news_item.date }}</span>
+                            {% if news_item.simbolo_display %}
+                                <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium text-xs">{{ news_item.simbolo_display }}</span>
+                            {% endif %}
+                            <a href="{{ news_item.url }}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline mt-1 md:mt-0">
+                                Ler mais <i class="fas fa-external-link-alt ml-1 text-xs"></i>
+                            </a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-gray-600 col-span-full">Nenhuma notícia disponível no momento.</p>
+                {% endif %}
+            </div>
         </section>
 
         <!-- Modal para Adicionar Alerta -->
