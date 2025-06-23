@@ -4,7 +4,7 @@ import os
 import joblib
 import pandas as pd
 import yfinance as yf
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, g
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
@@ -28,13 +28,21 @@ load_dotenv()
 from predictor_model import train_and_predict_price
 
 app = Flask(__name__)
+# MUITO IMPORTANTE: Mude esta chave para uma string aleatória complexa e secreta em produção!
+# Esta chave é usada para proteger as sessões dos utilizadores.
+# Agora pega a chave da variável de ambiente
 app.secret_key = os.getenv('SECRET_KEY')
 if not app.secret_key:
+    # Levanta um erro se a chave secreta não for encontrada, o que indica um problema no .env
     raise ValueError("A variável de ambiente 'SECRET_KEY' não está definida. Por favor, defina-a no seu arquivo .env.")
 else:
     print(f"DEBUG: SECRET_KEY carregada com sucesso (primeiros 5 caracteres): {app.secret_key[:5]}*****")
 
+
 CORS(app)
+
+# Passamos a função datetime.datetime.now (sem parênteses)
+app.jinja_env.globals['now'] = datetime.datetime.now
 
 # --- Constantes de Mapeamento de Símbolos ---
 SYMBOL_MAPPING = {
@@ -68,24 +76,25 @@ for name, ticker in SYMBOL_MAPPING.items():
     else:
         REVERSE_SYMBOL_MAPPING[ticker] = name # Se não for .SA, mantem o ticker original (ex: BTC-USD)
 
-
-# --- REGISTRA VARIÁVEIS GLOBAIS NO AMBIENTE JINJA2 ---
-app.jinja_env.globals['now'] = datetime.datetime.now
 app.jinja_env.globals['SYMBOL_MAPPING'] = SYMBOL_MAPPING
 app.jinja_env.globals['REVERSE_SYMBOL_MAPPING'] = REVERSE_SYMBOL_MAPPING
 
 # --- CONFIGURAÇÃO DO CACHE ---
-market_data_cache = {}
-news_cache = {}
-portfolio_cache = {}
-prediction_cache = {}
-historical_chart_cache = {}
+# Caching Dictionaries (globais)
+market_data_cache = {} # Key: (symbol, period, interval), Value: {'data': df or price, 'timestamp': datetime.datetime}
+news_cache = {}        # Key: query_term, Value: {'data': list_of_news_items, 'timestamp': datetime.datetime}
+portfolio_cache = {}   # Key: user_id, Value: {'data': (posicoes, total_valor, total_lucro, total_prejuizo), 'timestamp': datetime.datetime}
+prediction_cache = {}  # Key: symbol, Value: {'data': predicted_price, 'timestamp': datetime.datetime}
+historical_chart_cache = {} # Key: (symbol, period, interval), Value: {'data': plot_json, 'timestamp': datetime.datetime}
 
-MARKET_DATA_CACHE_TTL = 300 # 5 minutos
-NEWS_CACHE_TTL = 3600      # 1 hora
-PORTFOLIO_CACHE_TTL = 120  # 2 minutos
-PREDICTION_CACHE_TTL = 600 # 10 minutos
+
+# Cache TTL (Time To Live) em segundos
+MARKET_DATA_CACHE_TTL = 300  # 5 minutos para dados de mercado (cotações, históricos para modelos)
+NEWS_CACHE_TTL = 3600       # 1 hora para notícias
+PORTFOLIO_CACHE_TTL = 120   # 2 minutos para cálculos de portfólio (depende dos dados de mercado)
+PREDICTION_CACHE_TTL = 600  # 10 minutos para previsões (geralmente mais estáveis)
 HISTORICAL_CHART_CACHE_TTL = 3600 # 1 hora para gráficos históricos
+
 
 def is_cache_fresh(cache, key, ttl):
     """Verifica se um item no cache ainda é válido."""
@@ -97,12 +106,17 @@ def is_cache_fresh(cache, key, ttl):
 
 # --- FIM DA CONFIGURAÇÃO DO CACHE ---
 
+
 # --- CONFIGURAÇÃO DA API DE NOTÍCIAS ---
+# IMPORTANTE: Sua chave de API real da NewsAPI.org
+# Você pode obter uma chave gratuita em: https://newsapi.org/
+# Agora pega a chave da variável de ambiente
 NEWS_API_KEY = os.getenv('NEWS_API_KEY')
 NEWS_API_BASE_URL = "https://newsapi.org/v2/everything"
+# --- FIM DA CONFIGURAÇÃO DA API DE NOTÍCIAS ---
 
 # --- Constante para Paginação ---
-TRANSACTIONS_PER_PAGE = 6
+TRANSACTIONS_PER_PAGE = 6 # Número de transações a serem exibidas por página. Ajuste conforme necessário.
 
 # --- Registro do filtro 'datetimeformat' para Jinja2 ---
 @app.template_filter('datetimeformat')
@@ -116,9 +130,8 @@ def datetimeformat(value, format_string='%Y-%m-%d'):
         dt = value
     elif isinstance(value, datetime.date):
         dt = datetime.datetime(value.year, value.month, value.day)
-    elif isinstance(value, datetime.time): # Add handling for datetime.time objects
-        # For time objects, return a formatted string directly
-        return value.strftime(format_string)
+    elif isinstance(value, datetime.time):
+        return value.strftime(format_string) # Format time objects directly
     elif value is None:
         return 'N/A'
     else:
@@ -134,10 +147,10 @@ def datetimeformat(value, format_string='%Y-%m-%d'):
             else:
                 dt = datetime.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
         except ValueError:
-            return str(value)
+            return str(value) # Retorna o valor original se não puder ser convertido
     return dt.strftime(format_string)
 
-# --- Registro do filtro 'floatformat' para Jinja2 ---
+# --- NOVO: Registro do filtro 'floatformat' para Jinja2 ---
 @app.template_filter('floatformat')
 def floatformat(value, precision=2):
     """
@@ -146,9 +159,11 @@ def floatformat(value, precision=2):
     try:
         if value is None:
             return f"0.{'0' * precision}"
+        # Garante que o valor é um float antes de formatar
         return f"{float(value):.{precision}f}"
     except (ValueError, TypeError):
-        return value
+        return value # Retorna o valor original se não puder ser convertido para float
+
 
 # --- Configurações do Banco de Dados ---
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -159,15 +174,18 @@ if DATABASE_URL:
 else:
     DB_TYPE = 'mysql'
     print("DEBUG: Usando conexão MySQL (DATABASE_URL não detectada).")
+    # Agora pega as credenciais do banco de dados das variáveis de ambiente
     DB_CONFIG_MYSQL = {
-        'host': os.getenv('DB_HOST', 'localhost'),
+        'host': os.getenv('DB_HOST', 'localhost'), # 'localhost' como fallback para desenvolvimento
         'user': os.getenv('DB_USER'),
         'password': os.getenv('DB_PASSWORD'),
         'database': os.getenv('DB_DATABASE'),
-        'port': int(os.getenv('DB_PORT', 3306))
+        'port': int(os.getenv('DB_PORT', 3307)) # Converte para int, com 3307 como fallback
     }
+    # Verifica se as variáveis de ambiente essenciais para o DB foram carregadas
     if not all([DB_CONFIG_MYSQL['user'], DB_CONFIG_MYSQL['password'], DB_CONFIG_MYSQL['database']]):
         raise ValueError("Uma ou mais variáveis de ambiente do banco de dados MySQL (DB_USER, DB_PASSWORD, DB_DATABASE) não estão definidas para uso local. Por favor, defina-as no seu arquivo .env.")
+
 
 # --- Context Manager para Conexões Unificado (MySQL ou PostgreSQL) ---
 class DBConnectionManager:
@@ -249,7 +267,11 @@ class DBConnectionManager:
 
 # --- Decorators para Autenticação e Autorização ---
 def login_required(f):
-    @wraps(f)
+    """
+    Decorator que verifica se um utilizador está logado.
+    Se não estiver, redireciona para a página de login.
+    """
+    @wraps(f) # ESSENCIAL para Flask
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             flash('Você precisa estar logado para acessar esta página.', 'danger')
@@ -258,6 +280,10 @@ def login_required(f):
     return decorated_function
 
 def admin_required(f):
+    """
+    Decorator que verifica se o utilizador logado é um administrador.
+    Se não for, redireciona para a página principal com uma mensagem de erro.
+    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         print(f"DEBUG: admin_required - user_id na sessão: {session.get('user_id')}, is_admin na sessão: {session.get('is_admin')}")
@@ -270,7 +296,9 @@ def admin_required(f):
 # --- Funções Auxiliares para Autenticação e Gestão de Utilizadores ---
 def get_user_by_id(user_id):
     try:
+        # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
         with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
+            # Inclui 'full_name', 'email', 'contact_number' na seleção
             cursor_db.execute("SELECT id, username, full_name, email, contact_number, is_admin, created_at FROM users WHERE id = %s", (user_id,))
             user_data = cursor_db.fetchone()
             print(f"DEBUG: get_user_by_id({user_id}) - Dados do utilizador: {user_data}")
@@ -281,7 +309,9 @@ def get_user_by_id(user_id):
 
 def get_user_by_username(username):
     try:
+        # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
         with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
+            # Inclui 'full_name', 'email', 'contact_number' na seleção
             cursor_db.execute("SELECT id, username, password_hash, full_name, email, contact_number, is_admin FROM users WHERE username = %s", (username,))
             user_data = cursor_db.fetchone()
             print(f"DEBUG: get_user_by_username({username}) - Dados do utilizador: {user_data}")
@@ -290,6 +320,7 @@ def get_user_by_username(username):
         print(f"Erro ao buscar utilizador por nome de utilizador: {err}")
         return None
 
+# Nova função para buscar utilizador por email
 def get_user_by_email(email):
     try:
         with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
@@ -300,7 +331,9 @@ def get_user_by_email(email):
         print(f"Erro ao buscar utilizador por email: {err}")
         return None
 
+
 def get_all_users():
+    """Busca todos os utilizadores (exceto o próprio admin logado) para exibir no painel de admin."""
     users = []
     current_user_id = session.get('user_id')
     print(f"DEBUG: get_all_users() - current_user_id na sessão: {current_user_id}")
@@ -310,30 +343,39 @@ def get_all_users():
         return []
 
     try:
+        # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
         with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
+            # Inclui 'full_name', 'email', 'contact_number' na seleção
             sql_query = "SELECT id, username, full_name, email, contact_number, is_admin, created_at FROM users"
             cursor_db.execute(sql_query)
             all_users_from_db = cursor_db.fetchall()
+            
             print(f"DEBUG: get_all_users() - Todos os utilizadores do DB: {all_users_from_db}")
+
             users = [u for u in all_users_from_db if u['id'] != current_user_id]
+            
             print(f"DEBUG: get_all_users() - Utilizadores após filtrar o admin logado: {users}")
+
     except Exception as err:
         print(f"Erro ao buscar todos os utilizadores: {err}")
     return users
 
 def get_admin_count():
+    """Retorna o número total de utilizadores com is_admin = TRUE."""
     try:
+        # Usar buffered=True aqui para garantir que os resultados sejam lidos imediatamente
         with DBConnectionManager(dictionary=True, buffered=True) as cursor_db:
             cursor_db.execute("SELECT COUNT(*) as admin_count FROM users WHERE is_admin = TRUE")
             result = cursor_db.fetchone()
             count = result['admin_count'] if result else 0
             print(f"DEBUG: get_admin_count() - Total de administradores: {count}")
             return count
-    except Exception as e:
-        print(f"Erro ao contar administradores: {e}")
+    except Exception as err:
+        print(f"Erro ao contar administradores: {err}")
         return 0
 
 def delete_user_from_db(user_id):
+    """Exclui um utilizador do banco de dados e todas as suas transações/alertas."""
     print(f"DEBUG: Tentando excluir utilizador com ID: {user_id}")
     try:
         with DBConnectionManager() as cursor_db:
@@ -346,6 +388,7 @@ def delete_user_from_db(user_id):
         return False
 
 def update_user_password(user_id, new_password):
+    """Atualiza a palavra-passe de um utilizador."""
     print(f"DEBUG: Tentando redefinir senha para utilizador com ID: {user_id}")
     try:
         hashed_password = generate_password_hash(new_password)
@@ -359,6 +402,10 @@ def update_user_password(user_id, new_password):
         return False
 
 def toggle_user_admin_status(user_id, new_status):
+    """
+    Alterna o status de administrador de um utilizador.
+    new_status deve ser um booleano (True/False).
+    """
     print(f"DEBUG: Tentando definir is_admin para utilizador {user_id} como {new_status}")
     try:
         with DBConnectionManager() as cursor_db:
@@ -371,12 +418,14 @@ def toggle_user_admin_status(user_id, new_status):
         print(f"Erro ao alternar status de admin: {err}")
         return False
 
+# Nova função para atualizar dados do perfil do utilizador
 def update_user_profile_data(user_id, full_name, email, contact_number):
+    """Atualiza o nome completo, email e número de contacto de um utilizador."""
     try:
         with DBConnectionManager() as cursor_db:
             sql = """
-            UPDATE users
-            SET full_name = %s, email = %s, contact_number = %s
+            UPDATE users 
+            SET full_name = %s, email = %s, contact_number = %s 
             WHERE id = %s
             """
             cursor_db.execute(sql, (full_name, email, contact_number, user_id))
@@ -389,29 +438,36 @@ def update_user_profile_data(user_id, full_name, email, contact_number):
 
 # --- FUNÇÃO: Registar Ações de Administrador ---
 def log_admin_action(admin_user_id, action_type, target_user_id=None, details=None):
+    """
+    Regista uma ação realizada por um administrador na tabela admin_audit_logs,
+    armazenando os nomes de utilizador no momento da ação para persistência.
+    """
     try:
+        # Obter o nome de utilizador do admin (do user_id na sessão)
         admin_username = session.get('username')
         if not admin_username:
             admin_user_data = get_user_by_id(admin_user_id)
             admin_username = admin_user_data['username'] if admin_user_data else f"ID_Desconhecido_{admin_user_id}"
 
+        # Obter o nome de utilizador do target (se houver)
         target_username = None
         if target_user_id:
             target_user_data = get_user_by_id(target_user_id)
             target_username = target_user_data['username'] if target_user_data else f"ID_Deletado_{target_user_id}"
-
+            
         with DBConnectionManager() as cursor_db:
+            # Para MySQL, JSON é usado. Para PostgreSQL, JSONB é usado.
+            # O cursor.execute lida com a serialização para JSON/JSONB automaticamente dependendo do driver
+            # desde que 'details' seja um objeto Python (dict, list).
             sql = """
-            INSERT INTO admin_audit_logs (admin_user_id, admin_username_at_action, action_type, target_user_id, target_username_at_action, details, timestamp)
+            INSERT INTO admin_audit_logs (admin_user_id, admin_username_at_action, action_type, target_user_id, 
+            target_username_at_action, details, timestamp)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
-            details_to_save = details
-            if details is not None and not isinstance(details, str):
-                details_to_save = json.dumps(details)
+            cursor_db.execute(sql, (admin_user_id, admin_username, action_type, target_user_id, target_username, details, datetime.datetime.now()))
+    except Exception as e:
+        print(f"ERRO ao registar ação de admin no log: {e}")
 
-            cursor_db.execute(sql, (admin_user_id, admin_username, action_type, target_user_id, target_username, details_to_save, datetime.datetime.now()))
-    except Exception as err:
-        print(f"ERRO ao registar ação de admin no log: {err}")
 
 # --- Função Auxiliar para Buscar Transações (agora por utilizador) ---
 def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ordem, simbolo_filtro=None, page=1, per_page=TRANSACTIONS_PER_PAGE):
@@ -422,13 +478,12 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
 
         with DBConnectionManager(dictionary=True) as cursor_db:
             final_simbolo_to_fetch_for_filter = None
-
-            # Ajuste aqui para pegar o símbolo mapeado se for do SYMBOL_MAPPING, senão usa o que veio
+            
+            # CORREÇÃO AQUI: Verifica se o simbolo_filtro não é vazio E não é a string "None" (ignorando maiúsculas/minúsculas)
             if simbolo_filtro and simbolo_filtro.lower() != 'none':
-                # Primeiro tenta o mapeamento direto (nome amigável -> ticker YF)
+                # Tenta mapear ou ajustar o símbolo de filtro
                 final_simbolo_to_fetch_for_filter = SYMBOL_MAPPING.get(simbolo_filtro.upper(), simbolo_filtro)
-                
-                # Se não encontrou mapeamento direto E não parece ser um ticker YF padrão, tenta inferir .SA
+                # Adiciona .SA se for um ticker sem sufixo e alfanumérico com 4-6 caracteres
                 if final_simbolo_to_fetch_for_filter == simbolo_filtro and \
                    not any(c in simbolo_filtro for c in ['^', '-', '=']) and \
                    not any(simbolo_filtro.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
@@ -447,8 +502,8 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
             if data_fim:
                 where_clauses.append("data_transacao <= %s")
                 params.append(data_fim)
-
-            if final_simbolo_to_fetch_for_filter:
+            
+            if final_simbolo_to_fetch_for_filter: # Só adiciona esta cláusula se houver um símbolo válido
                 where_clauses.append("simbolo_ativo = %s")
                 params.append(final_simbolo_to_fetch_for_filter)
 
@@ -459,6 +514,7 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
             cursor_db.execute(count_query, tuple(params))
             total_transacoes = cursor_db.fetchone()['total']
             print(f"DEBUG FILTERS: Total Transações: {total_transacoes}")
+
 
             query = f"SELECT * FROM transacoes{where_sql}"
 
@@ -471,7 +527,7 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
                 ordem = 'DESC'
 
             query += f" ORDER BY {ordenar_por} {ordem}"
-
+            
             offset = (page - 1) * per_page
             query += f" LIMIT {per_page} OFFSET {offset}"
 
@@ -480,6 +536,7 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
             transacoes = cursor_db.fetchall()
 
             for transacao in transacoes:
+                # Converte timedelta para time se necessário (para PostgreSQL que pode retornar timedelta)
                 if isinstance(transacao.get('hora_transacao'), datetime.timedelta):
                     total_seconds = int(transacao['hora_transacao'].total_seconds())
                     hours, remainder = divmod(total_seconds, 3600)
@@ -488,8 +545,8 @@ def buscar_transacoes_filtradas(user_id, data_inicio, data_fim, ordenar_por, ord
                 elif transacao.get('hora_transacao') is None:
                     transacao['hora_transacao'] = None
 
-    except Exception as err:
-        print(f"ERRO ao buscar transações: {err}")
+    except Exception as e:
+        print(f"ERRO ao buscar transações: {e}")
         return [], 0
     return transacoes, total_transacoes
 
@@ -549,15 +606,18 @@ def _get_current_price_yfinance(simbolo):
         if 4 <= len(simbolo) <= 6 and simbolo.isalnum():
             final_simbolo_to_fetch = f"{simbolo.upper()}.SA"
 
-    cache_key = (final_simbolo_to_fetch, "1d", "1m")
+    cache_key = (final_simbolo_to_fetch, "1d", "1m") # Use a granularity that YFinance is likely to have
 
     if is_cache_fresh(market_data_cache, cache_key, MARKET_DATA_CACHE_TTL):
         return market_data_cache[cache_key]['data']
 
     try:
         ticker = yf.Ticker(final_simbolo_to_fetch)
+        # First try to get very recent data
         hist = ticker.history(period="1d", interval="1m")
 
+        # If 1m data is empty (e.g., outside market hours, or for specific symbols)
+        # try a daily interval for the last 5 days
         if hist.empty:
             hist = ticker.history(period="5d", interval="1d")
 
@@ -594,7 +654,7 @@ def get_predicted_price_for_display(simbolo):
        not any(simbolo.upper().endswith(suf)for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
         if 4 <= len(simbolo) <= 6 and simbolo.isalnum():
             simbolo_yf_for_prediction = f"{simbolo.upper()}.SA"
-
+            
     cache_key = simbolo_yf_for_prediction
 
     if is_cache_fresh(prediction_cache, cache_key, PREDICTION_CACHE_TTL):
@@ -602,8 +662,9 @@ def get_predicted_price_for_display(simbolo):
 
     predicted_price = None
 
+    # Certifique-se de que train_and_predict_price pode receber get_historical_prices_yfinance_cached como argumento
     predicted_price = train_and_predict_price(simbolo_yf_for_prediction, get_historical_prices_yfinance_cached)
-
+    
     if predicted_price is not None:
         prediction_cache[cache_key] = {'data': float(predicted_price), 'timestamp': datetime.datetime.now()}
         return float(predicted_price)
@@ -714,16 +775,20 @@ def calcular_posicoes_carteira(user_id):
         print(f"ERRO inesperado ao calcular posições da carteira: {e}")
         return {}, 0.0, 0.0, 0.0
 
+    # Atualiza o cache da carteira
     portfolio_cache[cache_key] = {
         'data': (posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado),
         'timestamp': datetime.datetime.now()
     }
+    print(f"DEBUG: calcular_posicoes_carteira - Cache da carteira atualizado para {user_id}.")
+
     return posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado
 
 # --- Funções para Notícias ---
 def fetch_news(query):
     cache_key = query
     if is_cache_fresh(news_cache, cache_key, NEWS_CACHE_TTL):
+        print(f"DEBUG: {len(news_cache[cache_key]['data'])} notícias obtidas do cache para '{query}'.")
         return news_cache[cache_key]['data']
 
     if not NEWS_API_KEY:
@@ -737,10 +802,12 @@ def fetch_news(query):
         'apiKey': NEWS_API_KEY
     }
     try:
+        print(f"DEBUG: fetch_news('{query}') - Iniciando busca de notícias.")
         response = requests.get(NEWS_API_BASE_URL, params=params)
-        response.raise_for_status()
+        response.raise_for_status() # Lança um HTTPError para respostas de erro
         news_data = response.json()
         articles = news_data.get('articles', [])
+        
         filtered_articles = [
             {
                 'title': art.get('title'),
@@ -752,52 +819,55 @@ def fetch_news(query):
             for art in articles if art.get('title') and art.get('description') and art.get('url')
         ]
         news_cache[cache_key] = {'data': filtered_articles, 'timestamp': datetime.datetime.now()}
+        print(f"DEBUG: {len(filtered_articles)} notícias obtidas e cacheadas para '{query}'.")
         return filtered_articles
     except requests.exceptions.RequestException as e:
-        print(f"Erro ao buscar notícias: {e}")
+        print(f"Erro ao buscar notícias para '{query}': {e}")
         return []
     except json.JSONDecodeError as e:
-        print(f"Erro ao decodificar JSON da API de notícias: {e}. Resposta: {response.text}")
+        print(f"Erro ao decodificar JSON da API de notícias para '{query}': {e}. Resposta: {response.text}")
         return []
+    except Exception as e:
+        print(f"Erro inesperado ao buscar notícias para '{query}': {e}")
+        return []
+
 
 # --- FUNÇÃO: Verificar se uma tabela existe ---
 def check_table_exists(table_name):
-    print(f"DEBUG: Verificando se a tabela '{table_name}' existe...")
+    print(f"DEBUG: check_table_exists('{table_name}') - Verificando se a tabela existe...")
     try:
         with DBConnectionManager(dictionary=True) as cursor_db:
             if DB_TYPE == 'postgresql':
-                # Verifica se a tabela existe em minúsculas (comportamento padrão)
+                # Verifica se a tabela existe em minúsculas (comportamento padrão do PG)
                 cursor_db.execute(f"SELECT to_regclass('{table_name}') IS NOT NULL AS exists_table;")
                 result_default_case = cursor_db.fetchone()
                 exists_default = result_default_case['exists_table'] if result_default_case else False
 
                 # Verifica se a tabela existe com o nome exato (se foi criada com aspas duplas)
-                # Esta verificação é mais para depuração; o objetivo é criar sem aspas
                 cursor_db.execute(f"SELECT to_regclass('\"{table_name}\"') IS NOT NULL AS exists_table_quoted;")
                 result_quoted_case = cursor_db.fetchone()
                 exists_quoted = result_quoted_case['exists_table_quoted'] if result_quoted_case else False
 
                 exists = exists_default or exists_quoted
-                print(f"DEBUG: Tabela '{table_name}' existe (padrão/minúsculas): {exists_default}, (com aspas/exato): {exists_quoted}, Resultado final: {exists}")
+                print(f"DEBUG: check_table_exists('{table_name}') - Resultado: (padrão/minúsculas): {exists_default}, (com aspas/exato): {exists_quoted}, Final: {exists}")
                 return exists
-            else: # MySQL (mantém como estava)
+            else: # MySQL
                 cursor_db.execute(f"SELECT COUNT(*) AS exists_table FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '{table_name}';")
                 result = cursor_db.fetchone()
                 exists = result['exists_table']
-                print(f"DEBUG: Tabela '{table_name}' existe: {exists}")
+                print(f"DEBUG: check_table_exists('{table_name}') - Resultado: {exists}")
                 return exists
     except Exception as e:
         print(f"ERRO: Falha ao verificar a existência da tabela '{table_name}': {e}")
         return False
 
-# --- NOVA FUNÇÃO: Criar tabelas se não existirem ---
+# --- FUNÇÃO: Criar tabelas se não existirem ---
 def create_tables_if_not_exist():
     print("DEBUG: Iniciando verificação e criação de tabelas...")
     try:
         with DBConnectionManager() as cursor_db:
             if DB_TYPE == 'postgresql':
-                # Tabela 'users'
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS users (PostgreSQL)...")
+                print("DEBUG: Criando tabelas para PostgreSQL...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id SERIAL PRIMARY KEY,
@@ -810,11 +880,8 @@ def create_tables_if_not_exist():
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Comando SQL para 'users' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit()
 
-                # Tabela 'transacoes' (depende de 'users')
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS transacoes (
                         id SERIAL PRIMARY KEY,
@@ -827,18 +894,13 @@ def create_tables_if_not_exist():
                         tipo_operacao VARCHAR(10) NOT NULL,
                         custos_taxas DECIMAL(10, 2) DEFAULT 0.00,
                         observacoes TEXT,
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Comando SQL para 'transacoes' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit()
 
-                # Tabela 'alertas' (depende de 'users')
-                alertas_table_name = "alertas" 
-                print(f"DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS {alertas_table_name} (PostgreSQL)...")
-                cursor_db.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {alertas_table_name} ( -- SEM ASPAS para garantir que seja minúscula por padrão
+                cursor_db.execute("""
+                    CREATE TABLE IF NOT EXISTS alertas (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         simbolo_ativo VARCHAR(20) NOT NULL,
@@ -846,16 +908,11 @@ def create_tables_if_not_exist():
                         tipo_alerta VARCHAR(10) NOT NULL, -- 'ACIMA' ou 'ABAIXO'
                         status VARCHAR(20) DEFAULT 'ATIVO' NOT NULL, -- 'ATIVO', 'DISPARADO', 'CANCELADO'
                         data_criacao TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                        data_disparo TIMESTAMP WITH TIME ZONE,
-                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                        data_disparo TIMESTAMP WITH TIME ZONE
                     );
                 """)
-                cursor_db.connection.commit() # Commit explícito após CREATE
-                print(f"DEBUG: Comando SQL para '{alertas_table_name}' executado e commitado.")
+                cursor_db.connection.commit()
 
-
-                # Tabela 'admin_audit_logs'
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (PostgreSQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS admin_audit_logs (
                         id SERIAL PRIMARY KEY,
@@ -868,12 +925,10 @@ def create_tables_if_not_exist():
                         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Comando SQL para 'admin_audit_logs' executado.")
-                cursor_db.connection.commit() # Commit explícito
-
-            else: # MySQL (Keep as is as MySQL isn't the problem here)
-                # Tabela 'users'
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS users (MySQL)...")
+                cursor_db.connection.commit()
+                
+            else: # MySQL
+                print("DEBUG: Criando tabelas para MySQL...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -886,10 +941,8 @@ def create_tables_if_not_exist():
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Comando SQL para 'users' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit()
 
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS transacoes (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS transacoes (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -906,10 +959,8 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Comando SQL para 'transacoes' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit()
 
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS alertas (MySQL)...") # NOME AGORA É 'alertas'
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS alertas (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -923,10 +974,8 @@ def create_tables_if_not_exist():
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                     );
                 """)
-                print("DEBUG: Comando SQL para 'alertas' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit()
 
-                print("DEBUG: Executando SQL: CREATE TABLE IF NOT EXISTS admin_audit_logs (MySQL)...")
                 cursor_db.execute("""
                     CREATE TABLE IF NOT EXISTS admin_audit_logs (
                         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -939,8 +988,8 @@ def create_tables_if_not_exist():
                         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                print("DEBUG: Comando SQL para 'admin_audit_logs' executado.")
-                cursor_db.connection.commit() # Commit explícito
+                cursor_db.connection.commit()
+
             print("DEBUG: Todas as operações CREATE TABLE IF NOT EXISTS foram enviadas ao banco de dados.")
     except Exception as e:
         print(f"ERRO CRÍTICO: Falha ao tentar verificar/criar tabelas: {e}")
@@ -961,8 +1010,8 @@ def index():
 
     # Dados da Carteira
     posicoes, total_valor_carteira, total_lucro_nao_realizado, total_prejuizo_nao_realizado = calcular_posicoes_carteira(user_id)
-    print(f"DEBUG: index route - Posições da carteira: {posicoes}")
-    print(f"DEBUG: index route - Total valor carteira: {total_valor_carteira}")
+    print(f"DEBUG: index route - Posições da carteira (antes do template): {posicoes}")
+    print(f"DEBUG: index route - Total valor carteira (antes do template): {total_valor_carteira}")
 
     # Gráfico de Pizza
     chart_labels = []
@@ -1053,7 +1102,7 @@ def index():
     for news_item in all_news:
         news_item['date'] = news_item['publishedAt'].strftime('%d/%m/%Y %H:%M') if news_item['publishedAt'] else 'N/A'
     
-    print(f"DEBUG: index route - Total de notícias coletadas: {len(all_news)}")
+    print(f"DEBUG: index route - Total de notícias coletadas (antes do template): {len(all_news)}")
 
 
     # Histórico de Transações para o Dashboard
@@ -1073,17 +1122,18 @@ def index():
 
 
     # Alertas de Preço
+    print(f"DEBUG: buscar_alertas({user_id}) - Iniciando busca de alertas.")
     alertas = buscar_alertas(user_id) # Esta função agora lida com a ausência da tabela
-    print(f"DEBUG: index route - Alertas encontrados: {len(alertas)}")
+    print(f"DEBUG: index route - Alertas encontrados (antes do template): {len(alertas)}")
 
 
     return render_template('index.html',
                            user_name=user_name,
-                           posicoes_carteira=posicoes, # Changed to posicoes_carteira for template match
+                           posicoes_carteira=posicoes,
                            total_valor_carteira=total_valor_carteira,
                            total_lucro_nao_realizado=total_lucro_nao_realizado,
                            total_prejuizo_nao_realizado=total_prejuizo_nao_realizado,
-                           all_news=all_news, # Changed to all_news for template match
+                           all_news=all_news,
                            pie_chart_json=pie_chart_json,
                            bar_chart_json=bar_chart_json,
                            transacoes=transacoes,
@@ -1603,6 +1653,7 @@ def edit_transaction(transaction_id):
         transaction['data_transacao_formatted'] = None # Garante que a chave existe
 
     if 'hora_transacao' in transaction and transaction['hora_transacao']:
+        # psycopg2 pode retornar timedelta para TIME, mysql.connector retorna datetime.time
         if isinstance(transaction['hora_transacao'], datetime.timedelta):
             total_seconds = int(transaction['hora_transacao'].total_seconds())
             hours, remainder = divmod(total_seconds, 3600)
@@ -1850,7 +1901,6 @@ def adicionar_alerta():
             INSERT INTO alertas (user_id, simbolo_ativo, preco_alvo, tipo_alerta, status, data_criacao)
             VALUES (%s, %s, %s, %s, %s, %s)
             """
-            # Certifique-se de que o nome da tabela no SQL é 'alertas' (em minúsculas)
             cursor_db.execute(sql, (user_id, simbolo_ativo_yf, preco_alvo, tipo_alerta, 'ATIVO', datetime.datetime.now()))
             flash('Alerta de preço adicionado com sucesso!', 'success')
     except Exception as e:
@@ -1870,7 +1920,6 @@ def excluir_alerta():
 
     try:
         with DBConnectionManager() as cursor_db:
-            # Garante que 'alertas' é acessado em minúsculas
             cursor_db.execute("DELETE FROM alertas WHERE id = %s AND user_id = %s", (alert_id, user_id))
             if cursor_db.rowcount > 0:
                 flash('Alerta de preço excluído com sucesso.', 'success')
@@ -1962,7 +2011,7 @@ if __name__ == '__main__':
         else:
             print("ERRO: Tabela 'transacoes' NÃO EXISTE após a tentativa de criação!")
 
-        if check_table_exists('alertas'): # Mudado para 'alertas'
+        if check_table_exists('alertas'):
             print("DEBUG: Tabela 'alertas' confirmada após a tentativa de criação.")
         else:
             print("ERRO: Tabela 'alertas' NÃO EXISTE após a tentativa de criação!")
