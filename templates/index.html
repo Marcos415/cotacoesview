@@ -1,1005 +1,604 @@
-{% extends 'base.html' %}
- 
-{% block title %}Minha Carteira - Gestor de Investimentos{% endblock %}
- 
-{% block head_extra %}
-<!-- Plotly.js CDN (usando a versão específica 2.30.0) -->
-<script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
-<style>
-    /* Estilos para o Modal (Pop-up)
-*/
-    .modal {
-        display: none; /*
-Hidden by default */
-        position: fixed; /* Stay
-in place */
-        z-index: 1000; /* Sit
-on top */
-        left: 0;
-        top: 0;
-        width: 100%; /* Full
-width */
-        height: 100%; /* Full
-height */
-        overflow: auto; /*
-Enable scroll if needed */
-        background-color: rgba(0,0,0,0.7); /* Black
-w/ opacity */
-        display: flex; /* Use
-flexbox for centering */
-        align-items: center; /* Center vertically */
-        justify-content: center; /* Center horizontally */
-    }
- 
-    .modal-content {
-        background-color: #fefefe;
-        margin: auto; /*
-Adjusted for flexbox centering */
-        padding: 20px;
-        border-radius: 0.75rem; /* rounded-xl */
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        width: 90%; /*
-Adjust width as needed */
-        max-width: 1000px; /* Max width for larger screens */
-        position: relative;
-    }
- 
-    .close-button {
-        color: #aaa;
-        position: absolute;
-        top: 10px;
-        right: 20px;
-        font-size: 28px;
-        font-weight: bold;
-        cursor: pointer;
-        transition: color 0.3s ease;
-    }
- 
-    .close-button:hover,
-    .close-button:focus {
-        color: #333;
-        text-decoration: none;
-    }
- 
-    /* Estilos para o gráfico dentro
-do modal */
-    #modalHistoricalChart {
-        min-height: 500px; /* Garante altura mínima para o
-gráfico */
-        width: 100%;
-        background-color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
- 
-    /* Loader para o gráfico */
-    .chart-loader {
-        border-top-color: #3498db;
-        -webkit-animation: spin 1s linear infinite;
-        animation: spin 1s linear infinite;
-        border-radius: 50%;
-        border: 4px solid rgba(0, 0, 0, 0.1);
-        border-top-color: #3498db;
-        height: 50px;
-        width: 50px;
-    }
- 
-    @-webkit-keyframes spin {
-        0% { -webkit-transform: rotate(0deg); }
-        100% { -webkit-transform: rotate(360deg); }
-    }
- 
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-</style>
-{% endblock %}
- 
-{% block content %}
-<div class="container mx-auto px-4 py-8">
-    <h1 class="text-4xl font-bold
-text-gray-900 mb-8 text-center">Dashboard de Investimentos</h1>
- 
-    <!-- Cartões de Resumo da
-Carteira -->
-    <div class="grid grid-cols-1 md:grid-cols-2
-lg:grid-cols-3 gap-6 mb-8">
-        <!-- Cartão de Valor Total da Carteira -->
-        <div class="bg-gradient-to-r from-blue-500 to-blue-600
-rounded-lg shadow-lg p-6 text-white flex flex-col justify-between transform
-transition-transform hover:scale-105">
-            <div>
-               
-                <p class="text-sm font-medium
-opacity-80">Valor Total da Carteira</p>
-               
-                <p class="text-3xl font-bold mt-1">R$ {{ total_valor_carteira | floatformat(2) }}</p>
-            </div>
-            <div class="mt-4 text-sm opacity-90">
-                <p>Valor total de todos os seus
-ativos.</p>
-               
-    </div>
-        </div>
- 
-        <!-- Cartão de Lucro/Prejuízo
-Total Não Realizado -->
-        <div class="rounded-lg shadow-lg p-6 text-white flex
-flex-col justify-between 
-                    {%
-if (total_lucro_nao_realizado + total_prejuizo_nao_realizado) >= 0
-%}bg-gradient-to-r from-green-500 to-green-600{% else %}bg-gradient-to-r
-from-red-500 to-red-600{% endif %}
-                   
-transform transition-transform hover:scale-105">
-            <div>
-               
-                <p class="text-sm font-medium opacity-80">Lucro/Prejuízo Total (Não Realizado)</p>
-               
-                <p class="text-3xl font-bold
-mt-1">R$ {{ (total_lucro_nao_realizado + total_prejuizo_nao_realizado) | floatformat(2) }}</p>
-               
-    </div>
-            <div class="mt-4 text-sm opacity-90">
-                <p>Lucro/Prejuízo flutuante das
-suas posições abertas.</p>
-               
-    (Valor Percentual): {{ ((total_lucro_nao_realizado + total_prejuizo_nao_realizado) / total_valor_carteira * 100) | default(0) | floatformat(2) }}%
-               
-    </div>
-        </div>
- 
-        <!-- Cartão de Número de
-Ativos Diferentes -->
-        <div class="bg-gradient-to-r from-purple-500
-to-purple-600 rounded-lg shadow-lg p-6 text-white flex flex-col justify-between
-transform transition-transform hover:scale-105">
-            <div>
-               
-                <p class="text-sm font-medium
-opacity-80">Número de Ativos Diferentes</p>
-               
-                <p class="text-3xl font-bold mt-1">{{ posicoes_carteira|length }}</p>
-            </div>
-            <div class="mt-4 text-sm opacity-90">
-                <p>Quantidade de ativos distintos
-na sua carteira.</p>
-               
-    </div>
-        </div>
-    </div>
- 
-    <!-- Botões de Ação -->
-    <div class="flex flex-wrap justify-center gap-4
-mb-10">
-        <a href="{{ url_for('add_transaction') }}"
-           class="bg-green-600 hover:bg-green-700 text-white
-font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out
-transform hover:-translate-y-1 hover:scale-105 flex items-center min-w-[220px]
-justify-center">
-            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-            Adicionar Nova Transação
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minha Carteira de Investimentos</title>
+    <!-- Inclui Tailwind CSS via CDN para estilo rápido e responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Cor de fundo suave */
+        }
+        /* Estilos personalizados para o card de saldo e botões */
+        .balance-card {
+            background-image: linear-gradient(to right, #4a90e2, #6a7ec2); /* Gradiente azul */
+            color: white;
+            border-radius: 1.5rem; /* Cantos mais arredondados */
+            padding: 2rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15); /* Sombra mais pronunciada */
+        }
+        .action-button {
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        .action-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
+        }
+        /* Estilos para badges de lucro/prejuízo */
+        .badge-profit {
+            background-color: #d4edda; /* Verde claro */
+            color: #155724; /* Verde escuro */
+            padding: 0.3rem 0.6rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+        }
+        .badge-loss {
+            background-color: #f8d7da; /* Vermelho claro */
+            color: #721c24; /* Vermelho escuro */
+            padding: 0.3rem 0.6rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+        }
+        /* Estilos para barras de progresso (se usar no futuro) */
+        .progress-bar-container {
+            background-color: #e0e0e0;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        .progress-bar {
+            background-color: #4a90e2;
+            height: 10px;
+            border-radius: 0.5rem;
+        }
+        .table-header {
+            background-color: #e9ecef; /* Um cinza mais claro para cabeçalhos de tabela */
+        }
+        /* Estilos para o modal de mensagem */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 1000; /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+            overflow: auto; /* Enable scroll if needed */
+            background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 2rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            max-width: 90%;
+            width: 400px;
+            text-align: center;
+        }
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        /* Responsive adjustments for smaller screens */
+        @media (max-width: 768px) {
+            .balance-card {
+                padding: 1.5rem;
+            }
+            .grid-cols-3-md {
+                grid-template-columns: 1fr; /* Stack columns on small screens */
+            }
+            .px-8 {
+                padding-left: 1rem;
+                padding-right: 1rem;
+            }
+            .py-6 {
+                padding-top: 1rem;
+                padding-bottom: 1rem;
+            }
+        }
+        
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col">
+    <!-- Navbar -->
+    <nav class="bg-white shadow-md p-4 flex justify-between items-center">
+        <a href="{{ url_for('index') }}" class="text-2xl font-bold text-gray-800">
+            Minha Carteira
         </a>
-        <a href="{{ url_for('index')
-}}"
-               class="bg-blue-600
-hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md
-transition duration-300 ease-in-out transform hover:-translate-y-1
-hover:scale-105 flex items-center min-w-[220px] justify-center">
-            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458
-12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064
-7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-            Ver Todas as Transações
-        </a>
-    </div>
- 
-    <!-- Lista de Investimentos
-Atuais -->
-    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-        <h2 class="text-2xl font-bold
-text-gray-800 mb-6">Meus Investimentos Atuais</h2>
-        <!-- Wrapper para rolagem vertical
-(~5-6 itens visíveis) -->
-        <div class="overflow-y-auto
-max-h-[280px] border border-gray-200 rounded-lg"> {# Ajustado max-h aqui #}
-       
-    <div class="overflow-x-auto"> {# Permite rolagem horizontal
-APENAS dentro desta div se a tabela for muito larga #}
-       
-        {% if posicoes_carteira %}
-       
-        <!-- Adicionando table-fixed e otimizando larguras de coluna para
-evitar rolagem horizontal -->
-       
-        <table class="min-w-full divide-y divide-gray-200
-table-fixed">
-                    <thead class="bg-gray-50 sticky top-0 z-10">
-                   
-            <tr>
-                   
-                <th scope="col" class="px-4 py-2 text-left
-text-xs font-medium text-gray-500 uppercase tracking-wider w-[18%]"> {# Ativo #}
-                   
-                    Ativo
-                   
-                </th>
-                   
-                <th scope="col" class="px-4 py-2 text-left
-text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]"> {# Quantidade #}
-                   
-                    Qtd
-                   
-                </th>
-                   
-                <th scope="col" class="px-4 py-2 text-left
-text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]"> {# Preço Médio de Compra #}
-                   
-                    Preço Médio
-                   
-                </th>
-                   
-                <th scope="col" class="px-4 py-2 text-left
-text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]"> {# Preço Atual #}
-                   
-                    Preço Atual
-                   
-                </th>
-                   
-                <th scope="col" class="px-4 py-2 text-left
-text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]"> {# Previsão Próximo Dia #}
-                   
-                    Previsão
-                   
-                </th>
-                   
-                <th scope="col" class="px-4 py-2 text-left
-text-xs font-medium text-gray-500 uppercase tracking-wider w-[18%]"> {# Lucro/Prejuízo Não Realizado #}
-                   
-                    Lucro/Prejuízo
-                   
-                </th>
-                   
-                <th scope="col" class="px-4 py-2 text-left
-text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]"> {# Valor Total do Ativo #}
-                   
-                    Valor Total
-                   
-                </th>
-                   
-                <th scope="col" class="px-4 py-2 text-right
-text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]"> {# Gráfico #}
-                   
-                    Gráfico
-                   
-                </th>
-                    </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                   
-    {% for simbolo, dados in posicoes_carteira.items() %}
-       
-                        <tr>
-                            
-                <td class="px-4 py-2 text-sm font-medium text-gray-900
-truncate"> {# truncate
-para evitar overflow de texto #}
-                            
-                    {{ dados.nome_popular }} ({{ simbolo }})
-               
-                            </td>
-               
-                            <td class="px-4 py-2 text-sm text-gray-500">
-                                
-                    {{ dados.quantidade | floatformat(2) }}
-               
-                            </td>
-               
-                            <td class="px-4 py-2 text-sm text-gray-500">
-                                
-                    R$ {{ dados.preco_medio | floatformat(2) }}
-               
-                            </td>
-               
-                            <td class="px-4 py-2 text-sm {% if
-dados.preco_atual is not none and dados.preco_atual > dados.preco_medio
-%}text-green-600{% elif dados.preco_atual is not none and dados.preco_atual
-< dados.preco_medio %}text-red-600{% else %}text-gray-500{% endif %}">
-               
-                    {% if dados.preco_atual is not none %}
-                                    
-                        R$ {{ dados.preco_atual | floatformat(2) }}
-               
-                    {% else %}
-                                    
-                        N/A
-               
-                            {% endif %}
-                            
-                </td>
-                            
-                <td class="px-4 py-2 text-sm text-blue-600">
-                                
-                    {% if dados.preco_previsto is not none %}
-                                    
-                        R$ {{ dados.preco_previsto | floatformat(2) }}
-               
-                    {% else %}
-                                    
-                        N/A
-               
-                            {% endif %}
-                            
-                </td>
-                            
-                <td class="px-4 py-2 text-sm {% if
-dados.lucro_prejuizo_nao_realizado is not none and
-dados.lucro_prejuizo_nao_realizado >= 0 %}text-green-600{% elif
-dados.lucro_prejuizo_nao_realizado is not none and
-dados.lucro_prejuizo_nao_realizado < 0 %}text-red-600{% else
-%}text-gray-500{% endif %}">
-               
-                    {% if dados.lucro_prejuizo_nao_realizado is not none %}
-               
-                            R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) }} ({{ ((dados.lucro_prejuizo_nao_realizado / (dados.preco_medio * dados.quantidade)) * 100) | default(0) | floatformat(2) }}%)
-               
-                    {% else %}
-                                    
-                        N/A
-               
-                            {% endif %}
-                            
-                </td>
-                            
-                <td class="px-4 py-2 text-sm text-gray-500">
-                                
-                    R$ {{ dados.valor_atual | floatformat(2) }}
-               
-                            </td>
-                            <td class="px-4 py-2 text-right text-sm font-medium">
-                                
-                    <button type="button" 
-                                    
-                    class="show-chart-btn
-bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-1 px-3 rounded-md
-text-xs transition-colors"
-                                    
-                    data-symbol="{{ simbolo }}" data-asset-name="{{ dados.nome_popular
-}}">Gráfico</button>
-               
-                            </td>
-                        </tr>
-                   
-    {% endfor %}
-                    </tbody>
-                </table>
- 
-                {% else %}
-       
-        <p class="text-center text-gray-500
-py-4">Nenhum investimento atual na
-carteira. Adicione transações para vê-los aqui.</p>
-       
-        {% endif %}
-       
-    </div>
-        </div>
-    </div>
- 
-    <!-- Filtros de Transações e
-Tabela de Transações -->
-    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-        <h2 class="text-2xl font-bold
-text-gray-800 mb-6">Histórico de Transações</h2>
-        <form method="GET" action="{{ url_for('index')
-}}" class="transaction-filter-form grid grid-cols-1
-md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 items-end">
-            <div>
-                <label for="data_inicio" class="block text-sm font-medium text-gray-700">Data Início:</label>
-                <input type="date" id="data_inicio" name="data_inicio" value="{{
-data_inicio | default('') }}"
-                   
-    class="mt-1
-block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3
-focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-            </div>
-            <div>
-                <label for="data_fim" class="block text-sm font-medium text-gray-700">Data Fim:</label>
-                <input type="date" id="data_fim" name="data_fim" value="{{
-data_fim | default('') }}"
-                   
-    class="mt-1
-block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3
-focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-            </div>
-            <div>
-                <label for="simbolo_filtro" class="block text-sm font-medium text-gray-700">Símbolo/Nome:</label>
-                <input type="text" id="simbolo_filtro" name="simbolo_filtro" value="{{
-simbolo_filtro | default('') }}"
-                   
-    class="mt-1
-block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3
-focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                   
-    placeholder="Ex:
-PETR4, VALE3">
-       
-    </div>
-           
-    <div>
-       
-        <label for="ordenar_por" class="block text-sm font-medium
-text-gray-700">Ordenar Por:</label>
-       
-        <select id="ordenar_por" name="ordenar_por"
-       
-                class="mt-1 block w-full
-pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none
-focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-                    <option value="data_transacao" {% if ordenar_por == 'data_transacao' %}selected{% endif %}>Data da Transação</option>
-       
-            <option value="simbolo_ativo" {% if ordenar_por == 'simbolo_ativo' %}selected{% endif %}>Símbolo Ativo</option>
-       
-            <option value="preco_unitario" {% if ordenar_por == 'preco_unitario' %}selected{% endif %}>Preço Unitário</option>
-       
-            <option value="quantidade" {% if ordenar_por == 'quantidade' %}selected{% endif %}>Quantidade</option>
-       
-            <option value="tipo_operacao" {% if ordenar_por == 'tipo_operacao' %}selected{% endif %}>Tipo de Operação</option>
-       
-        </select>
-            </div>
-            <div>
-                <label for="ordem" class="block text-sm font-medium text-gray-700">Ordem:</label>
-                <select id="ordem" name="ordem"
-                   
-    class="mt-1
-block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500
-focus:border-blue-500 sm:text-sm rounded-md">
-                    <option value="DESC" {% if ordem == 'DESC' %}selected{% endif %}>Descendente</option>
-                    <option value="ASC" {% if ordem == 'ASC' %}selected{% endif %}>Ascendente</option>
-                </select>
-            </div>
-            <div class="col-span-1 md:col-span-2 lg:col-span-4 flex
-justify-end space-x-2">
-                <button type="submit" class="bg-indigo-600
-hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
-                   
-                    Aplicar Filtros
-                   
+        <div class="flex items-center space-x-4">
+            {% if session.get('user_id') %}
+            <span class="text-gray-700">Olá, <span class="font-semibold">{{ user_name }}</span>!</span>
+            <div class="relative group">
+                <button class="text-gray-700 hover:text-blue-600 focus:outline-none flex items-center space-x-1">
+                    <i class="fas fa-user-circle text-xl"></i>
+                    <span>Conta</span>
+                    <i class="fas fa-chevron-down text-xs ml-1"></i>
                 </button>
-                <a href="{{ url_for('index') }}" class="bg-gray-400
-hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
-                   
-                    Limpar Filtros
-               
-    </a>
-       
-    </div>
-        </form>
- 
-        <div class="overflow-x-auto">
-            {% if transacoes %}
-       
-    <table class="min-w-full divide-y
-divide-gray-200 table-auto"> {# Mantém table-auto para esta tabela, pois o número de colunas é maior
-e as observações podem variar #}
-       
-        <thead class="bg-gray-50">
-                    <tr>
-                   
-                <th scope="col" class="px-4
-py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Data
-                   
-                </th>
-                   
-                <th scope="col" class="px-4
-py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Hora
-                   
-                </th>
-                   
-                <th scope="col" class="px-4
-py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Símbolo Ativo
-                   
-                </th>
-                   
-                <th scope="col" class="px-4
-py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Tipo de Operação
-                   
-                </th>
-                   
-                <th scope="col" class="px-4
-py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Preço Unitário
-                   
-                </th>
-                   
-                <th scope="col" class="px-4
-py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Quantidade
-                   
-                </th>
-                   
-                <th scope="col" class="px-4
-py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Custos/Taxas
-                   
-                </th>
-                   
-                <th scope="col" class="px-4
-py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Observações
-                   
-                </th>
-                   
-                <th scope="col" class="px-4
-py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Ações
-                   
-                </th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {%for transacao in transacoes %}
-                    <tr>
-                   
-                <td class="px-4 py-2 text-sm
-text-gray-900">
-                   
-                    {{ transacao.data_transacao | datetimeformat }}
-               
-                </td>
-               
-                <td class="px-4 py-2 text-sm text-gray-500">
-                   
-                    {{ transacao.hora_transacao | datetimeformat('%H:%M') if transacao.hora_transacao else 'N/A' }}
-               
-                </td>
-                    
-                <td class="px-4 py-2 text-sm
-text-gray-500">
-                   
-                    {{ REVERSE_SYMBOL_MAPPING.get(transacao.simbolo_ativo, transacao.simbolo_ativo) }} ({{ transacao.simbolo_ativo }})
-               
-                </td>
-               
-                <td class="px-4 py-2 text-sm {% if
-transacao.tipo_operacao == 'COMPRA' %}text-blue-600{% else %}text-red-600{%
-endif %} font-semibold">
-               
-                    {{ transacao.tipo_operacao }}
-                            </td>
-                    
-                <td class="px-4 py-2 text-sm
-text-gray-500">
-                   
-                    R$ {{ transacao.preco_unitario | floatformat(2) }}
-               
-                </td>
-                    
-                <td class="px-4 py-2 text-sm
-text-gray-500">
-                   
-                    {{ transacao.quantidade | floatformat(2) }}
-                            </td>
-                    
-                <td class="px-4 py-2 text-sm
-text-gray-500">
-                   
-                    R$ {{ transacao.custos_taxas | floatformat(2) }}
-               
-                </td>
-                    
-                <td class="px-4 py-2 text-sm
-text-gray-500">
-                   
-                    {{ transacao.observacoes if transacao.observacoes else 'N/A' }}
-                            </td>
-                    
-                <td class="px-4 py-2 text-left
-text-sm font-medium">
-                   
-                    <a href="{{ url_for('edit_transaction',
-transaction_id=transacao.id) }}" class="text-indigo-600 hover:text-indigo-900
-mr-3">Editar</a> {# Corrigido de 'id' para 'transaction_id' #}
-                   
-                    <form action="{{ url_for('delete_transaction',
-transaction_id=transacao.id) }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir
-esta transação?');"> {# Corrigido de 'id' para 'transaction_id' e 'excluir_transacao' para 'delete_transaction' #}
-               
-                            <input type="hidden" name="id" value="{{
-transacao.id }}">
-                            
-                    <button type="submit" class="text-red-600
-hover:text-red-900">Excluir</button>
-                            
-                    </form>
-                            
-                </td>
-                    </tr>
-                    {%endfor %}
-                </tbody>
-            </table>
- 
-            <!--
-Paginação -->
-            {% if total_pages > 1 %}
-            <nav class="mt-4 flex justify-center" aria-label="Pagination">
-                <ul class="flex items-center -space-x-px">
-                    {% if page > 1 %}
-               
-            <li>
-               
-                <a href="{{ url_for('index',
-page=page-1, data_inicio=data_inicio, data_fim=data_fim,
-ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
-               
-                    class="pagination-link py-2
-px-3 leading-tight text-gray-500 bg-white border border-gray-300
-hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700
-dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white
-rounded-l-lg">Anterior</a>
-                    </li>
-                    {%endif %}
-                    {%for p in range(1, total_pages + 1) %}
-                    <li>
-               
-                <a href="{{ url_for('index',
-page=p, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por,
-ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
-               
-                    class="pagination-link py-2
-px-3 leading-tight {% if p == page %}text-blue-600 bg-blue-50 border-blue-300{%
-else %}text-gray-500 bg-white border border-gray-300{% endif %}
-hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700
-dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white">
-                                    
-                        {{ p }}
-                                    
-                </a>
-                    </li>
-                    {%endfor %}
-                    {%if page < total_pages %}
-                    <li>
-               
-            <li>
-               
-                <a href="{{ url_for('index',
-page=page+1, data_inicio=data_inicio, data_fim=data_fim,
-ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}"
-               
-                    class="pagination-link py-2
-px-3 leading-tight text-gray-500 bg-white border border-gray-300
-hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700
-dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white
-rounded-r-lg">Próxima</a>
-                    </li>
-                    {%endif %}
-                </ul>
-            </nav>
-            {% endif %}
- 
-            {% else %}
-            <p class="text-center text-gray-500
-py-4">Nenhuma transação encontrada com
-os filtros atuais.</p>
-       
-    {% endif %}
-        </div>
-    </div>
- 
-    <!-- Alertas de Preço -->
-    <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-        <h2 class="text-2xl font-bold
-text-gray-800 mb-6">Meus Alertas de Preço</h2>
-        <form method="POST" action="{{
-url_for('adicionar_alerta') }}" class="alert-form mb-6 grid
-grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-                <label for="alerta_simbolo" class="block text-sm font-medium text-gray-700">Símbolo Ativo:</label>
-                <input type="text" id="alerta_simbolo" name="simbolo_ativo" required
-                   
-    class="mt-1
-block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3
-focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                   
-    placeholder="Ex:
-PETR4, VALE3">
-       
-    </div>
-           
-    <div>
-                <label for="preco_alvo" class="block text-sm font-medium text-gray-700">Preço Alvo:</label>
-                <input type="number" step="0.01" id="preco_alvo" name="preco_alvo" required
-                   
-    class="mt-1
-block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3
-focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                   
-    placeholder="Ex: 35.00">
-            </div>
-            <div>
-                <label for="tipo_alerta" class="block text-sm font-medium text-gray-700">Tipo de Alerta:</label>
-                <select id="tipo_alerta" name="tipo_alerta" required
-       
-                class="mt-1 block w-full
-pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none
-focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md">
-                    <option value="ACIMA">Acima de</option>
-       
-            <option value="ABAIXO">Abaixo de</option>
-       
-        </select>
-            </div>
-            <div class="md:col-span-3 flex justify-end">
-                <button type="submit" class="bg-purple-600
-hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md shadow-sm
-transition-colors">
-                   
-                    Adicionar Alerta
-                   
-                </button>
-            </div>
-        </form>
- 
-        <div class="overflow-x-auto">
-            {% if alertas %}
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                   
-                <th scope="col" class="px-6
-py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Símbolo Ativo
-                   
-                </th>
-                   
-                <th scope="col" class="px-6
-py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Preço Alvo
-                   
-                </th>
-                   
-                <th scope="col" class="px-6
-py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Tipo
-                   
-                </th>
-                   
-                <th scope="col" class="px-6
-py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Status
-                   
-                </th>
-                   
-                <th scope="col" class="px-6
-py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Criado Em
-                   
-                </th>
-                   
-                <th scope="col" class="px-6
-py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Disparado Em
-                   
-                </th>
-                   
-                <th scope="col" class="px-6
-py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   
-                    Ações
-                   
-                </th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {%for alerta in alertas %}
-                    <tr>
-                   
-                <td class="px-6 py-4
-whitespace-nowrap text-sm font-medium text-gray-900">
-                   
-                    {{ REVERSE_SYMBOL_MAPPING.get(alerta.simbolo_ativo, alerta.simbolo_ativo) }} ({{ alerta.simbolo_ativo }})
-               
-                </td>
-                    
-                <td class="px-6 py-4
-whitespace-nowrap text-sm text-gray-500">
-                   
-                    R$ {{ alerta.preco_alvo | floatformat(2) }}
-               
-                </td>
-                    
-                <td class="px-6 py-4
-whitespace-nowrap text-sm text-gray-500">
-                   
-                    {{ alerta.tipo_alerta }}
-                            </td>
-                    
-                <td class="px-6 py-4
-whitespace-nowrap text-sm 
-                   
-                    {% if alerta.status == 'ATIVO' %}text-green-600{%
-elif alerta.status == 'DISPARADO' %}text-orange-600{% else %}text-gray-500{%
-endif %} font-semibold">
-                   
-                    {{ alerta.status }}
-                            </td>
-                    
-                <td class="px-6 py-4
-whitespace-nowrap text-sm text-gray-500">
-                   
-                    {{ alerta.data_criacao | datetimeformat('%Y-%m-%d %H:%M') }}
-               
-                </td>
-                    
-                <td class="px-6 py-4
-whitespace-nowrap text-sm text-gray-500">
-                   
-                    {{ alerta.data_disparo | datetimeformat('%Y-%m-%d %H:%M') if alerta.data_disparo else 'N/A' }}
-               
-                </td>
-                    
-                <td class="px-6 py-4
-whitespace-nowrap text-left text-sm font-medium">
-                   
-                    <form action="{{ url_for('excluir_alerta') }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir este alerta?');">
-                        
-                    <input type="hidden" name="id" value="{{
-alerta.id }}">
-                        
-                    <button type="submit" class="text-red-600
-hover:text-red-900">Excluir</button>
-                        
-                    </form>
-                            
-                </td>
-                    </tr>
-                    {%endfor %}
-                </tbody>
-            </table>
-       
-    {% else %}
-       
-    <p class="text-center text-gray-500
-py-4">Nenhum alerta de preço
-configurado. Adicione um para ser notificado!</p>
-       
-    {% endif %}
-        </div>
-    </div>
- 
-    <!-- Seção de Notícias
-Financeiras -->
-    <div class="bg-white rounded-lg shadow-lg p-6">
-        <h2 class="text-2xl font-bold
-text-gray-800 mb-6">Notícias Financeiras Recentes</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2
-lg:grid-cols-3 gap-6">
-            {% for news_item in all_news %}
-            <div class="bg-gray-50 rounded-lg p-4 shadow-sm flex
-flex-col justify-between transition-transform hover:scale-[1.02]">
-                <div>
-                    <h3 class="font-semibold text-lg text-gray-900 mb-2
-leading-tight">{{ news_item.title }}</h3>
-                    {%if news_item.simbolo_display %}
-                   
-    <p class="text-xs text-gray-600
-mb-2">Relacionado a: <span class="font-medium text-blue-700">{{ news_item.simbolo_display }}</span></p>
-                    {%endif %}
-                    <p class="text-sm text-gray-700 mb-3">{{ news_item.source }} - {{ news_item.date }}</p>
+                <div class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-20 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 ease-in-out transform scale-95 group-hover:scale-100">
+                    <a href="{{ url_for('profile') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                        <i class="fas fa-cog mr-2"></i>Configurações do Perfil
+                    </a>
+                    {% if session.get('is_admin') %}
+                    <a href="{{ url_for('admin_dashboard') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                        <i class="fas fa-users-cog mr-2"></i>Painel de Admin
+                    </a>
+                    <a href="{{ url_for('admin_audit_logs') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                        <i class="fas fa-clipboard-list mr-2"></i>Logs de Auditoria
+                    </a>
+                    {% endif %}
+                    <a href="{{ url_for('logout') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t border-gray-200 mt-1 pt-2">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Sair
+                    </a>
                 </div>
-                <a href="{{ news_item.url }}" target="_blank" rel="noopener noreferrer"
-                   class="text-blue-600
-hover:text-blue-800 text-sm font-medium mt-auto flex items-center">
-                   
-                    Ler mais
-                   
-                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0
-0v6m0-6L10 14"></path></svg>
-                </a>
             </div>
             {% else %}
-            <p class="text-center text-gray-500 py-4
-col-span-full">Nenhuma notícia disponível
-no momento.</p>
-            {% endfor %}
+            <a href="{{ url_for('login') }}" class="text-gray-700 hover:text-blue-600">Login</a>
+            <a href="{{ url_for('register') }}" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">Registar</a>
+            {% endif %}
         </div>
-    </div>
-</div>
- 
-<!-- Modal do Gráfico -->
-<div id="chartModal" class="modal">
-    <div class="modal-content">
-        <span class="close-button">&times;</span>
-        <h3 id="modalChartTitle" class="text-xl font-bold text-gray-800 mb-4 text-center"></h3>
-        <div id="modalHistoricalChart" class="flex items-center justify-center">
-            <div class="chart-loader hidden"></div>
-            <div id="plotlyChartDiv"></div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 py-8">
+        <!-- Flash Messages -->
+        <div id="flash-messages" class="mb-6">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="p-3 mb-3 rounded-lg text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}" role="alert">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
         </div>
-    </div>
-</div>
 
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const modal = document.getElementById('chartModal');
-        const closeButton = document.querySelector('.close-button');
-        const chartButtons = document.querySelectorAll('.show-chart-btn');
-        const modalChartTitle = document.getElementById('modalChartTitle');
-        const plotlyChartDiv = document.getElementById('plotlyChartDiv');
-        const chartLoader = document.querySelector('.chart-loader');
+        <!-- Seção de Saldo da Carteira -->
+        <section class="balance-card mb-8">
+            <h2 class="text-3xl font-bold mb-4">Saldo da Carteira</h2>
+            <div class="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+                <div class="text-4xl font-extrabold">
+                    R$ {{ total_valor_carteira | floatformat(2) }}
+                </div>
+                <div class="flex flex-col md:flex-row space-y-3 md:space-y-0 md:space-x-4">
+                    <a href="{{ url_for('add_transaction') }}" class="flex items-center justify-center bg-white text-blue-600 px-6 py-3 rounded-full font-semibold hover:bg-gray-100 action-button">
+                        <i class="fas fa-plus-circle mr-2"></i> Adicionar Transação
+                    </a>
+                    <a href="{{ url_for('transactions_list') }}" class="flex items-center justify-center bg-white text-blue-600 px-6 py-3 rounded-full font-semibold hover:bg-gray-100 action-button">
+                        <i class="fas fa-list-alt mr-2"></i> Ver Transações
+                    </a>
+                </div>
+            </div>
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Lucro/Prejuízo Não Realizado</h3>
+                    <p class="text-2xl font-bold {% if total_lucro_nao_realizado + total_prejuizo_nao_realizado >= 0 %}text-green-200{% else %}text-red-200{% endif %}">
+                        R$ {{ (total_lucro_nao_realizado + total_prejuizo_nao_realizado) | floatformat(2) }}
+                    </p>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Prejuízo Potencial</h3>
+                    <p class="text-2xl font-bold {% if total_prejuizo_nao_realizado == 0 %}text-green-200{% else %}text-red-200{% endif %}">
+                        R$ {{ total_prejuizo_nao_realizado | floatformat(2) }}
+                    </p>
+                </div>
+            </div>
+        </section>
 
-        function showLoader() {
-            plotlyChartDiv.innerHTML = ''; // Clear previous chart
-            chartLoader.classList.remove('hidden');
+        <!-- Posições da Carteira -->
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Minhas Posições</h2>
+            {% if posicoes_carteira %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg overflow-hidden">
+                        <thead class="bg-gray-200 text-gray-700">
+                            <tr>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Ativo</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Qtd.</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Preço Médio</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Preço Atual</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Preço Previsto</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Valor Total</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Lucro/Prejuízo</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            {% for simbolo, dados in posicoes_carteira.items() %}
+                            <tr>
+                                <td class="py-3 px-4 text-gray-700 font-medium">
+                                    {{ dados.nome_popular }} <span class="text-xs text-gray-500">({{ simbolo }})</span>
+                                </td>
+                                <td class="py-3 px-4 text-gray-700">{{ dados.quantidade | floatformat(4) }}</td>
+                                <td class="py-3 px-4 text-gray-700">R$ {{ dados.preco_medio | floatformat(2) }}</td>
+                                <td class="py-3 px-4 text-gray-700">
+                                    {% if dados.preco_atual is not None %}
+                                        R$ {{ dados.preco_atual | floatformat(2) }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                                <td class="py-3 px-4 text-gray-700">
+                                    {% if dados.preco_previsto is not none %}
+                                        R$ {{ dados.preco_previsto | floatformat(2) }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                                <td class="py-3 px-4 text-gray-700">R$ {{ dados.valor_atual | floatformat(2) }}</td>
+                                <td class="py-3 px-4">
+                                    {% if dados.lucro_prejuizo_nao_realizado is not none %}
+                                        <span class="text-sm font-semibold {% if dados.lucro_prejuizo_nao_realizado >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                                            R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) }}
+                                        </span>
+                                    {% else %}
+                                        <span class="text-sm text-gray-500">N/A</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-gray-600">Nenhuma posição na carteira ainda. <a href="{{ url_for('add_transaction') }}" class="text-blue-600 hover:underline">Adicione uma transação</a> para começar!</p>
+            {% endif %}
+        </section>
+
+        <!-- Alertas de Preço -->
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 flex justify-between items-center">
+                Alertas de Preço
+                <button onclick="openAddAlertModal()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors action-button">
+                    <i class="fas fa-bell mr-2"></i>Adicionar Alerta
+                </button>
+            </h2>
+            {% if alertas %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg overflow-hidden">
+                        <thead class="bg-gray-200 text-gray-700">
+                            <tr>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Ativo</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Preço Alvo</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Tipo</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Status</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Data Criação</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            {% for alerta in alertas %}
+                            <tr>
+                                <td class="py-3 px-4 text-gray-700 font-medium">
+                                    {{ REVERSE_SYMBOL_MAPPING.get(alerta.simbolo_ativo, alerta.simbolo_ativo.replace('.SA', '').upper()) }}
+                                    <span class="text-xs text-gray-500">({{ alerta.simbolo_ativo }})</span>
+                                </td>
+                                <td class="py-3 px-4 text-gray-700">R$ {{ alerta.preco_alvo | floatformat(2) }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ 'Acima de' if alerta.tipo_alerta == 'ACIMA' else 'Abaixo de' }}</td>
+                                <td class="py-3 px-4 text-gray-700">
+                                    <span class="px-2 py-1 rounded-full text-xs font-semibold
+                                        {% if alerta.status == 'ATIVO' %}bg-blue-100 text-blue-800
+                                        {% elif alerta.status == 'DISPARADO' %}bg-green-100 text-green-800
+                                        {% elif alerta.status == 'CANCELADO' %}bg-red-100 text-red-800
+                                        {% endif %}">
+                                        {{ alerta.status }}
+                                    </span>
+                                </td>
+                                <td class="py-3 px-4 text-gray-700">{{ alerta.data_criacao | datetimeformat('%d/%m/%Y %H:%M') }}</td>
+                                <td class="py-3 px-4">
+                                    <form action="{{ url_for('excluir_alerta') }}" method="POST" onsubmit="return confirm('Tem certeza que deseja excluir este alerta?');">
+                                        <input type="hidden" name="id" value="{{ alerta.id }}">
+                                        <button type="submit" class="text-red-500 hover:text-red-700 text-sm font-medium" title="Excluir Alerta">
+                                            <i class="fas fa-trash-alt"></i> Excluir
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-gray-600">Nenhum alerta de preço configurado. Adicione um para ser notificado sobre movimentos de preços!</p>
+            {% endif %}
+        </section>
+
+        <!-- Notícias do Mercado -->
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Notícias do Mercado</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {% if all_news %}
+                    {% for news_item in all_news %}
+                    <div class="bg-gray-50 p-4 rounded-lg shadow-sm flex flex-col justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ news_item.title }}</h3>
+                            <p class="text-gray-600 text-sm mb-3">{{ news_item.description }}</p>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-between text-xs text-gray-500 mt-2">
+                            <span class="mr-2 mb-1 md:mb-0"><i class="fas fa-newspaper mr-1"></i> {{ news_item.source }}</span>
+                            <span class="mr-2 mb-1 md:mb-0"><i class="fas fa-clock mr-1"></i> {{ news_item.date }}</span>
+                            {% if news_item.simbolo_display %}
+                                <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium text-xs">{{ news_item.simbolo_display }}</span>
+                            {% endif %}
+                            <a href="{{ news_item.url }}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline mt-1 md:mt-0">
+                                Ler mais <i class="fas fa-external-link-alt ml-1 text-xs"></i>
+                            </a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-gray-600 col-span-full">Nenhuma notícia disponível no momento.</p>
+                {% endif %}
+            </div>
+        </section>
+
+        <!-- Histórico de Transações Recentes (tabela com paginação) -->
+        <section class="bg-white p-6 rounded-xl shadow-md">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Histórico de Transações Recentes</h2>
+
+            <!-- Formulário de Filtro -->
+            <form action="{{ url_for('index') }}" method="GET" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 items-end">
+                <div>
+                    <label for="data_inicio" class="block text-sm font-medium text-gray-700 mb-1">Data Início:</label>
+                    <input type="date" id="data_inicio" name="data_inicio" value="{{ data_inicio }}" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
+                </div>
+                <div>
+                    <label for="data_fim" class="block text-sm font-medium text-gray-700 mb-1">Data Fim:</label>
+                    <input type="date" id="data_fim" name="data_fim" value="{{ data_fim }}" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
+                </div>
+                <div>
+                    <label for="simbolo_filtro" class="block text-sm font-medium text-gray-700 mb-1">Símbolo Ativo:</label>
+                    <input type="text" id="simbolo_filtro" name="simbolo_filtro" value="{{ simbolo_filtro }}" placeholder="Ex: PETR4.SA ou PETROBRAS" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
+                </div>
+                <div>
+                    <label for="ordenar_por" class="block text-sm font-medium text-gray-700 mb-1">Ordenar Por:</label>
+                    <select id="ordenar_por" name="ordenar_por" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
+                        <option value="data_transacao" {% if ordenar_por == 'data_transacao' %}selected{% endif %}>Data</option>
+                        <option value="simbolo_ativo" {% if ordenar_por == 'simbolo_ativo' %}selected{% endif %}>Símbolo Ativo</option>
+                        <option value="preco_unitario" {% if ordenar_por == 'preco_unitario' %}selected{% endif %}>Preço Unitário</option>
+                        <option value="quantidade" {% if ordenar_por == 'quantidade' %}selected{% endif %}>Quantidade</option>
+                        <option value="tipo_operacao" {% if ordenar_por == 'tipo_operacao' %}selected{% endif %}>Tipo Operação</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="ordem" class="block text-sm font-medium text-gray-700 mb-1">Ordem:</label>
+                    <select id="ordem" name="ordem" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
+                        <option value="DESC" {% if ordem == 'DESC' %}selected{% endif %}>Descendente</option>
+                        <option value="ASC" {% if ordem == 'ASC' %}selected{% endif %}>Ascendente</option>
+                    </select>
+                </div>
+                <div class="col-span-1 md:col-span-1 flex space-x-2">
+                    <button type="submit" class="flex-grow bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md shadow-sm font-medium action-button">
+                        <i class="fas fa-filter mr-2"></i>Filtrar
+                    </button>
+                    <a href="{{ url_for('index') }}" class="flex-grow bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-md shadow-sm font-medium text-center">
+                        <i class="fas fa-times-circle mr-2"></i>Limpar
+                    </a>
+                </div>
+            </form>
+
+            {% if transacoes %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg overflow-hidden">
+                        <thead class="bg-gray-200 text-gray-700">
+                            <tr>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Data</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Hora</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Ativo</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Qtd.</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Preço Unit.</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Tipo</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Custos/Taxas</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Observações</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            {% for transacao in transacoes %}
+                            <tr>
+                                <td class="py-3 px-4 text-gray-700">{{ transacao.data_transacao | datetimeformat('%d/%m/%Y') }}</td>
+                                <td class="py-3 px-4 text-gray-700">
+                                    {% if transacao.hora_transacao %}
+                                        {{ transacao.hora_transacao | datetimeformat('%H:%M') }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                                <td class="py-3 px-4 text-gray-700 font-medium">
+                                    {{ REVERSE_SYMBOL_MAPPING.get(transacao.simbolo_ativo, transacao.simbolo_ativo.replace('.SA', '').upper()) }}
+                                    <span class="text-xs text-gray-500">({{ transacao.simbolo_ativo }})</span>
+                                </td>
+                                <td class="py-3 px-4 text-gray-700">{{ transacao.quantidade | floatformat(4) }}</td>
+                                <td class="py-3 px-4 text-gray-700">R$ {{ transacao.preco_unitario | floatformat(2) }}</td>
+                                <td class="py-3 px-4">
+                                    <span class="px-2 py-1 rounded-full text-xs font-semibold
+                                        {% if transacao.tipo_operacao == 'COMPRA' %}bg-green-100 text-green-800
+                                        {% elif transacao.tipo_operacao == 'VENDA' %}bg-red-100 text-red-800
+                                        {% endif %}">
+                                        {{ transacao.tipo_operacao }}
+                                    </span>
+                                </td>
+                                <td class="py-3 px-4 text-gray-700">R$ {{ transacao.custos_taxas | floatformat(2) }}</td>
+                                <td class="py-3 px-4 text-gray-700 text-sm max-w-xs overflow-hidden text-ellipsis whitespace-nowrap" title="{{ transacao.observacoes }}">
+                                    {% if transacao.observacoes %}{{ transacao.observacoes }}{% else %}N/A{% endif %}
+                                </td>
+                                <td class="py-3 px-4 flex space-x-2">
+                                    <a href="{{ url_for('edit_transaction', transaction_id=transacao.id) }}" class="text-blue-500 hover:text-blue-700 text-sm font-medium" title="Editar Transação">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <form action="{{ url_for('delete_transaction', transaction_id=transacao.id) }}" method="POST" onsubmit="return confirm('Tem certeza que deseja excluir esta transação?');">
+                                        <button type="submit" class="text-red-500 hover:text-red-700 text-sm font-medium" title="Excluir Transação">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Paginação -->
+                <nav class="flex justify-center items-center space-x-2 mt-6">
+                    {% if page > 1 %}
+                        <a href="{{ url_for('index', page=1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">Primeira</a>
+                        <a href="{{ url_for('index', page=page-1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">&laquo; Anterior</a>
+                    {% endif %}
+
+                    {% for p in range(1, total_pages + 1) %}
+                        {% if p == page %}
+                            <span class="px-3 py-1 rounded-md bg-blue-600 text-white font-bold">{{ p }}</span>
+                        {% elif p > page - 3 and p < page + 3 %} {# Mostra algumas páginas ao redor da atual #}
+                            <a href="{{ url_for('index', page=p, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">{{ p }}</a>
+                        {% elif loop.index == 1 or loop.index == total_pages %} {# Sempre mostra a primeira e a última #}
+                            <a href="{{ url_for('index', page=p, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">{{ p }}</a>
+                        {% elif loop.index == page - 3 or loop.index == page + 3 %} {# Adiciona reticências #}
+                            <span class="px-3 py-1">...</span>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page < total_pages %}
+                        <a href="{{ url_for('index', page=page+1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">Próxima &raquo;</a>
+                        <a href="{{ url_for('index', page=total_pages, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">Última</a>
+                    {% endif %}
+                </nav>
+            {% else %}
+                <p class="text-gray-600">Nenhuma transação encontrada com os filtros aplicados.</p>
+            {% endif %}
+        </section>
+
+        <!-- Modal para Adicionar Alerta -->
+        <div id="addAlertModal" class="modal">
+            <div class="modal-content">
+                <span class="close-button" onclick="closeAddAlertModal()">&times;</span>
+                <h3 class="text-xl font-bold mb-4">Adicionar Novo Alerta de Preço</h3>
+                <form action="{{ url_for('adicionar_alerta') }}" method="POST" class="space-y-4">
+                    <div>
+                        <label for="alert_simbolo_ativo" class="block text-sm font-medium text-gray-700 mb-1 text-left">Ativo:</label>
+                        <select id="alert_simbolo_ativo" name="simbolo_ativo" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" onchange="toggleManualAlertInput()">
+                            <option value="">Selecione um ativo</option>
+                            {% for key, value in SYMBOL_MAPPING.items() %}
+                                <option value="{{ key }}">{{ key }} ({{ value }})</option>
+                            {% endfor %}
+                            <option value="OUTRO">Outro (digitar manualmente)</option>
+                        </select>
+                        <!-- Campo para entrada manual, oculto por padrão -->
+                        <input type="text" id="alert_simbolo_ativo_manual" name="simbolo_ativo_manual" placeholder="Símbolo YFinance (Ex: GOOG, MSFT, ^BVSP)" class="mt-2 hidden w-full border-gray-300 rounded-md shadow-sm p-2">
+                        <!-- Campo oculto para enviar o valor final -->
+                        <input type="hidden" id="final_alert_simbolo_ativo" name="simbolo_ativo">
+                    </div>
+                    <div>
+                        <label for="preco_alvo" class="block text-sm font-medium text-gray-700 mb-1 text-left">Preço Alvo:</label>
+                        <input type="number" id="preco_alvo" name="preco_alvo" step="0.01" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2">
+                    </div>
+                    <div>
+                        <label for="tipo_alerta" class="block text-sm font-medium text-gray-700 mb-1 text-left">Tipo de Alerta:</label>
+                        <select id="tipo_alerta" name="tipo_alerta" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2">
+                            <option value="ACIMA">Quando o preço estiver ACIMA do alvo</option>
+                            <option value="ABAIXO">Quando o preço estiver ABAIXO do alvo</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md font-semibold w-full action-button">Adicionar Alerta</button>
+                </form>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white p-6 text-center mt-8">
+        <p>&copy; {{ now() | datetimeformat('%Y') }} Minha Carteira de Investimentos. Todos os direitos reservados.</p>
+        <p class="text-sm mt-2">Desenvolvido com <i class="fas fa-heart text-red-500"></i> e Python.</p>
+    </footer>
+
+    <script>
+        // Função para mostrar/ocultar o modal de adicionar alerta
+        function openAddAlertModal() {
+            document.getElementById('addAlertModal').style.display = 'flex';
         }
 
-        function hideLoader() {
-            chartLoader.classList.add('hidden');
+        function closeAddAlertModal() {
+            document.getElementById('addAlertModal').style.display = 'none';
+            // Reseta a seleção e o campo manual ao fechar
+            document.getElementById('alert_simbolo_ativo').value = '';
+            document.getElementById('alert_simbolo_ativo_manual').value = '';
+            document.getElementById('alert_simbolo_ativo_manual').classList.add('hidden');
         }
 
-        chartButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                const symbol = this.dataset.symbol;
-                const assetName = this.dataset.assetName; // Pega o nome amigável do data-asset-name
-                
-                modalChartTitle.textContent = `Carregando gráfico para ${assetName} (${symbol})...`;
-                modal.style.display = 'flex'; // Use flex to center
-                showLoader();
-
-                fetch(`/get_historical_chart_data/${symbol}`)
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        hideLoader();
-                        if (data.error) {
-                            modalChartTitle.textContent = `Erro ao carregar dados para ${assetName} (${symbol}): ${data.error}`;
-                            plotlyChartDiv.innerHTML = `<p class="text-red-500 text-center">${data.error}</p>`;
-                        } else {
-                            modalChartTitle.textContent = `Gráfico Histórico de ${assetName} (${symbol})`;
-                            Plotly.newPlot('plotlyChartDiv', JSON.parse(data.plot_json).data, JSON.parse(data.plot_json).layout);
-                        }
-                    })
-                    .catch(error => {
-                        hideLoader();
-                        modalChartTitle.textContent = `Erro de rede ao carregar gráfico para ${assetName} (${symbol}).`;
-                        plotlyChartDiv.innerHTML = `<p class="text-red-500 text-center">Não foi possível carregar o gráfico. Tente novamente mais tarde. Erro: ${error}</p>`;
-                        console.error('Fetch error:', error);
-                    });
-            });
-        });
-
-        closeButton.addEventListener('click', function() {
-            modal.style.display = 'none';
-        });
-
-        window.addEventListener('click', function(event) {
+        // Fecha o modal se o utilizador clicar fora do conteúdo
+        window.onclick = function(event) {
+            const modal = document.getElementById('addAlertModal');
             if (event.target == modal) {
-                modal.style.display = 'none';
+                closeAddAlertModal();
+            }
+        }
+
+        // Lógica para o campo "Outro" no formulário de alerta
+        function toggleManualAlertInput() {
+            const selectElement = document.getElementById('alert_simbolo_ativo');
+            const manualInput = document.getElementById('alert_simbolo_ativo_manual');
+            const finalSimboloInput = document.getElementById('final_alert_simbolo_ativo');
+
+            if (selectElement.value === 'OUTRO') {
+                manualInput.classList.remove('hidden');
+                manualInput.focus();
+                finalSimboloInput.value = manualInput.value; // Inicializa com o valor manual se já houver
+            } else {
+                manualInput.classList.add('hidden');
+                manualInput.value = ''; // Limpa o valor se voltar para uma opção pré-definida
+                finalSimboloInput.value = selectElement.value; // Usa o valor do select
+            }
+        }
+
+        // Atualiza o campo hidden quando o input manual de alerta muda
+        document.getElementById('alert_simbolo_ativo_manual').addEventListener('input', function() {
+            document.getElementById('final_alert_simbolo_ativo').value = this.value;
+        });
+
+        // Configura o valor inicial do campo hidden ao carregar a página (para o caso de recarregamento com erro)
+        document.addEventListener('DOMContentLoaded', function() {
+            toggleManualAlertInput(); // Chama para configurar o estado inicial (caso "OUTRO" esteja selecionado)
+            // Define o valor do hidden baseado no select, a menos que OUTRO esteja selecionado e o manual tenha um valor
+            const selectElement = document.getElementById('alert_simbolo_ativo');
+            const manualInput = document.getElementById('alert_simbolo_ativo_manual');
+            const finalSimboloInput = document.getElementById('final_alert_simbolo_ativo');
+
+            if (selectElement.value === 'OUTRO' && manualInput.value) {
+                finalSimboloInput.value = manualInput.value;
+            } else {
+                finalSimboloInput.value = selectElement.value;
             }
         });
-    });
-</script>
+
+        // Este script é adicionado para garantir que as mensagens flash são exibidas corretamente
+        document.addEventListener('DOMContentLoaded', function() {
+            const flashMessages = document.getElementById('flash-messages');
+            if (flashMessages && flashMessages.children.length > 0) {
+                // Se houver mensagens, elas já estão visíveis pelo Flask.
+                // Você pode adicionar um timer para escondê-las automaticamente, se desejar.
+                setTimeout(() => {
+                    flashMessages.innerHTML = ''; // Remove as mensagens
+                }, 7000); // Esconde após 7 segundos
+            }
+        });
+
+    </script>
+</body>
+</html>
