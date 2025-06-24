@@ -204,55 +204,57 @@
         <section class="bg-white p-6 rounded-xl shadow-md mb-8">
             <h2 class="text-2xl font-bold text-gray-800 mb-6">Minhas Posições</h2>
             {% if posicoes_carteira %}
-                <div class="overflow-x-auto">
-                    <table class="min-w-full bg-white rounded-lg overflow-hidden">
-                        <thead class="bg-gray-200 text-gray-700">
-                            <tr>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Ativo</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Qtd.</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Preço Médio</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Preço Atual</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Preço Previsto</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Valor Total</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Lucro/Prejuízo</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-200">
-                            {% for simbolo, dados in posicoes_carteira.items() %}
-                            <tr>
-                                <td class="py-3 px-4 text-gray-700 font-medium">
-                                    {{ dados.nome_popular }} <span class="text-xs text-gray-500">({{ simbolo }})</span>
-                                </td>
-                                <td class="py-3 px-4 text-gray-700">{{ dados.quantidade | floatformat(4) }}</td>
-                                <td class="py-3 px-4 text-gray-700">R$ {{ dados.preco_medio | floatformat(2) }}</td>
-                                <td class="py-3 px-4 text-gray-700">
-                                    {% if dados.preco_atual is not none %}
-                                        R$ {{ dados.preco_atual | floatformat(2) }}
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
-                                </td>
-                                <td class="py-3 px-4 text-gray-700">
-                                    {% if dados.preco_previsto is not none %}
-                                        R$ {{ dados.preco_previsto | floatformat(2) }}
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
-                                </td>
-                                <td class="py-3 px-4 text-gray-700">R$ {{ dados.valor_atual | floatformat(2) }}</td>
-                                <td class="py-3 px-4">
-                                    {% if dados.lucro_prejuizo_nao_realizado is not none %}
-                                        <span class="text-sm font-semibold {% if dados.lucro_prejuizo_nao_realizado >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
-                                            R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) }}
-                                        </span>
-                                    {% else %}
-                                        <span class="text-sm text-gray-500">N/A</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                <div class="max-h-[500px] overflow-y-auto pr-4"> {# Adicionado max-height e overflow-y-auto aqui #}
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full bg-white rounded-lg overflow-hidden">
+                            <thead class="bg-gray-200 text-gray-700">
+                                <tr>
+                                    <th class="py-3 px-4 text-left text-sm font-semibold">Ativo</th>
+                                    <th class="py-3 px-4 text-left text-sm font-semibold">Qtd.</th>
+                                    <th class="py-3 px-4 text-left text-sm font-semibold">Preço Médio</th>
+                                    <th class="py-3 px-4 text-left text-sm font-semibold">Preço Atual</th>
+                                    <th class="py-3 px-4 text-left text-sm font-semibold">Preço Previsto</th>
+                                    <th class="py-3 px-4 text-left text-sm font-semibold">Valor Total</th>
+                                    <th class="py-3 px-4 text-left text-sm font-semibold">Lucro/Prejuízo</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                                {% for simbolo, dados in posicoes_carteira.items() %}
+                                <tr>
+                                    <td class="py-3 px-4 text-gray-700 font-medium">
+                                        {{ dados.nome_popular }} <span class="text-xs text-gray-500">({{ simbolo }})</span>
+                                    </td>
+                                    <td class="py-3 px-4 text-gray-700">{{ dados.quantidade | floatformat(4) }}</td>
+                                    <td class="py-3 px-4 text-gray-700">R$ {{ dados.preco_medio | floatformat(2) }}</td>
+                                    <td class="py-3 px-4 text-gray-700">
+                                        {% if dados.preco_atual is not none %}
+                                            R$ {{ dados.preco_atual | floatformat(2) }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                    <td class="py-3 px-4 text-gray-700">
+                                        {% if dados.preco_previsto is not none %}
+                                            R$ {{ dados.preco_previsto | floatformat(2) }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                    <td class="py-3 px-4 text-gray-700">R$ {{ dados.valor_atual | floatformat(2) }}</td>
+                                    <td class="py-3 px-4">
+                                        {% if dados.lucro_prejuizo_nao_realizado is not none %}
+                                            <span class="text-sm font-semibold {% if dados.lucro_prejuizo_nao_realizado >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                                                R$ {{ dados.lucro_prejuizo_nao_realizado | floatformat(2) }}
+                                            </span>
+                                        {% else %}
+                                            <span class="text-sm text-gray-500">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             {% else %}
                 <p class="text-gray-600">Nenhuma posição na carteira ainda. <a href="{{ url_for('add_transaction') }}" class="text-blue-600 hover:underline">Adicione uma transação</a> para começar!</p>
@@ -455,7 +457,7 @@
         <!-- Notícias do Mercado -->
         <section class="bg-white p-6 rounded-xl shadow-md mb-8">
             <h2 class="text-2xl font-bold text-gray-800 mb-6">Notícias do Mercado</h2>
-            <div class="max-h-[500px] overflow-y-auto pr-4"> {# Adicionado max-height e overflow-y-auto aqui #}
+            <div class="max-h-[500px] overflow-y-auto pr-4">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {% if all_news %}
                         {% for news_item in all_news %}
