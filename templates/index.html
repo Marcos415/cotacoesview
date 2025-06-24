@@ -604,6 +604,22 @@
             }
         });
 
+        // --- FUNCIONALIDADE PARA MANTER POSIÇÃO DE ROLAGEM ---
+        // Salva a posição de rolagem antes de descarregar a página
+        window.addEventListener('beforeunload', () => {
+            sessionStorage.setItem('scrollPos', window.scrollY);
+        });
+
+        // Restaura a posição de rolagem quando a página carrega
+        window.addEventListener('load', () => {
+            const savedScrollPos = sessionStorage.getItem('scrollPos');
+            if (savedScrollPos) {
+                window.scrollTo(0, parseInt(savedScrollPos));
+                sessionStorage.removeItem('scrollPos'); // Remove para não restaurar em futuras visitas (a menos que a página seja recarregada novamente)
+            }
+        });
+        // --- FIM DA FUNCIONALIDADE DE ROLAGEM ---
+
     </script>
 </body>
 </html>
