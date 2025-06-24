@@ -9,6 +9,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Font Awesome para ícones -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Chart.js para gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -81,6 +83,21 @@
             width: 400px;
             text-align: center;
         }
+        /* Estilos para o modal de gráfico - ajusta a largura para ser mais amigável ao gráfico */
+        #chartModal .modal-content {
+            width: 90%; /* Mais largo para o gráfico */
+            max-width: 800px; /* Limita a largura máxima */
+            height: auto; /* Altura automática */
+            max-height: 90vh; /* Altura máxima para caber na tela */
+            display: flex;
+            flex-direction: column;
+        }
+        #chartModal canvas {
+            max-height: 500px; /* Limita a altura do canvas para evitar gráficos muito altos */
+            width: 100% !important; /* Garante que o canvas ocupa toda a largura disponível */
+            height: auto !important; /* Mantém a proporção */
+        }
+
         .close-button {
             color: #aaa;
             float: right;
@@ -109,6 +126,9 @@
             .py-6 {
                 padding-top: 1rem;
                 padding-bottom: 1rem;
+            }
+            #chartModal .modal-content {
+                width: 95%; /* Ainda mais largo em mobile */
             }
         }
         
@@ -217,6 +237,7 @@
                                     <th class="py-3 px-4 text-left text-sm font-semibold">Preço Previsto</th>
                                     <th class="py-3 px-4 text-left text-sm font-semibold">Valor Total</th>
                                     <th class="py-3 px-4 text-left text-sm font-semibold">Lucro/Prejuízo</th>
+                                    <th class="py-3 px-4 text-left text-sm font-semibold">Ações</th> {# Nova coluna para o botão #}
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200">
@@ -250,6 +271,11 @@
                                         {% else %}
                                             <span class="text-sm text-gray-500">N/A</span>
                                         {% endif %}
+                                    </td>
+                                    <td class="py-3 px-4"> {# Coluna para o botão do gráfico #}
+                                        <button onclick="openChartModal('{{ simbolo }}', '{{ dados.nome_popular }}')" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md text-xs font-medium transition-colors action-button">
+                                            <i class="fas fa-chart-line mr-1"></i> Gráfico
+                                        </button>
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -522,6 +548,23 @@
             </div>
         </div>
 
+        <!-- NOVO: Modal para o Gráfico de Ativo -->
+        <div id="chartModal" class="modal">
+            <div class="modal-content">
+                <span class="close-button" onclick="closeChartModal()">&times;</span>
+                <h3 id="chartTitle" class="text-xl font-bold mb-4">Gráfico de Fechamento Diário</h3>
+                <div class="relative w-full overflow-hidden">
+                    <canvas id="myChart"></canvas>
+                    <div id="chartLoading" class="absolute inset-0 bg-white bg-opacity-80 flex items-center justify-center hidden">
+                        <i class="fas fa-spinner fa-spin text-blue-500 text-4xl"></i>
+                    </div>
+                    <div id="chartError" class="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center text-red-600 font-semibold text-lg hidden p-4 text-center">
+                        Não foi possível carregar o gráfico. Tente novamente mais tarde.
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <!-- Footer -->
@@ -531,6 +574,9 @@
     </footer>
 
     <script>
+        // Variável global para o gráfico Chart.js
+        let myChartInstance = null;
+
         // Função para mostrar/ocultar o modal de adicionar alerta
         function openAddAlertModal() {
             const modal = document.getElementById('addAlertModal');
@@ -547,11 +593,117 @@
             document.getElementById('alert_simbolo_ativo_manual').classList.add('hidden');
         }
 
-        // Fecha o modal se o utilizador clicar fora do conteúdo
+        // --- Funções para o Modal do Gráfico ---
+        async function openChartModal(simbolo, nomePopular) {
+            const modal = document.getElementById('chartModal');
+            const chartLoading = document.getElementById('chartLoading');
+            const chartError = document.getElementById('chartError');
+            const chartTitle = document.getElementById('chartTitle');
+
+            // Limpa qualquer gráfico anterior
+            if (myChartInstance) {
+                myChartInstance.destroy();
+            }
+
+            // Exibe o modal e o loader
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+            chartLoading.classList.remove('hidden');
+            chartError.classList.add('hidden');
+            chartTitle.textContent = `Gráfico de Fechamento Diário: ${nomePopular} (${simbolo})`;
+
+            try {
+                const response = await fetch(`/get_chart_data/${simbolo}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+
+                if (data.labels && data.data) {
+                    renderChart('myChart', data.labels, data.data, nomePopular, simbolo);
+                } else {
+                    chartError.classList.remove('hidden');
+                    console.error("Dados do gráfico inválidos:", data);
+                }
+            } catch (error) {
+                console.error("Erro ao buscar dados do gráfico:", error);
+                chartError.classList.remove('hidden');
+            } finally {
+                chartLoading.classList.add('hidden'); // Oculta o loader
+            }
+        }
+
+        function closeChartModal() {
+            document.getElementById('chartModal').style.display = 'none';
+            if (myChartInstance) {
+                myChartInstance.destroy(); // Destruir o gráfico ao fechar o modal
+            }
+        }
+
+        function renderChart(canvasId, labels, data, nomePopular, simbolo) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            myChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: `Preço de Fechamento (${nomePopular} - ${simbolo})`,
+                        data: data,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1,
+                        fill: false,
+                        pointRadius: 0, // Remove os pontos para gráficos de linha densos
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false, // Permite que o gráfico se ajuste à div
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Data'
+                            },
+                            ticks: {
+                                autoSkip: true,
+                                maxTicksLimit: 20 // Limita o número de labels no eixo X para evitar sobreposição
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Preço (R$)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        // --- Fim das Funções para o Modal do Gráfico ---
+
+
+        // Fecha o modal se o utilizador clicar fora do conteúdo (para ambos os modals)
         window.onclick = function(event) {
-            const modal = document.getElementById('addAlertModal');
-            if (event.target == modal) {
+            const addAlertModal = document.getElementById('addAlertModal');
+            const chartModal = document.getElementById('chartModal');
+
+            if (event.target == addAlertModal) {
                 closeAddAlertModal();
+            }
+            if (event.target == chartModal) {
+                closeChartModal();
             }
         }
 
