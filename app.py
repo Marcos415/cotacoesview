@@ -1134,6 +1134,58 @@ def transactions_list():
 
     simbolo_filtro_mapeado = SYMBOL_MAPPING.get(simbolo_filtro_raw.upper(), simbolo_filtro_raw)
 
+    # --- NOVO: Cálculo das estatísticas de resumo ---
+    total_bought_value = 0.0
+    total_sold_value = 0.0
+    total_transaction_costs = 0.0
+    
+    # Construir as cláusulas WHERE para as consultas de resumo
+    params_summary = [user_id]
+    where_clauses_summary = ["user_id = %s"]
+
+    if data_inicio:
+        where_clauses_summary.append("data_transacao >= %s")
+        params_summary.append(data_inicio)
+
+    if data_fim:
+        where_clauses_summary.append("data_transacao <= %s")
+        params_summary.append(data_fim)
+    
+    if simbolo_filtro_mapeado:
+        where_clauses_summary.append("simbolo_ativo = %s")
+        params_summary.append(simbolo_filtro_mapeado)
+
+    where_sql_summary = " WHERE " + " AND ".join(where_clauses_summary) if where_clauses_summary else ""
+
+    try:
+        with DBConnectionManager(dictionary=True) as cursor_db:
+            # Consulta para total de compras
+            query_bought = f"SELECT SUM(quantidade * preco_unitario) AS total_value FROM transacoes{where_sql_summary} AND tipo_operacao = 'COMPRA'"
+            cursor_db.execute(query_bought, tuple(params_summary))
+            result_bought = cursor_db.fetchone()
+            total_bought_value = float(result_bought['total_value']) if result_bought and result_bought['total_value'] else 0.0
+
+            # Consulta para total de vendas
+            query_sold = f"SELECT SUM(quantidade * preco_unitario) AS total_value FROM transacoes{where_sql_summary} AND tipo_operacao = 'VENDA'"
+            cursor_db.execute(query_sold, tuple(params_summary))
+            result_sold = cursor_db.fetchone()
+            total_sold_value = float(result_sold['total_value']) if result_sold and result_sold['total_value'] else 0.0
+
+            # Consulta para total de custos/taxas
+            query_costs = f"SELECT SUM(custos_taxas) AS total_costs FROM transacoes{where_sql_summary}"
+            cursor_db.execute(query_costs, tuple(params_summary))
+            result_costs = cursor_db.fetchone()
+            total_transaction_costs = float(result_costs['total_costs']) if result_costs and result_costs['total_costs'] else 0.0
+
+    except Exception as e:
+        print(f"ERRO ao calcular estatísticas de resumo das transações: {e}")
+        # Em caso de erro, manter os totais como zero
+        total_bought_value = 0.0
+        total_sold_value = 0.0
+        total_transaction_costs = 0.0
+    # --- FIM NOVO: Cálculo das estatísticas de resumo ---
+
+
     transacoes, total_transacoes = buscar_transacoes_filtradas(
         user_id,
         data_inicio,
@@ -1156,7 +1208,10 @@ def transactions_list():
                            ordem=ordem,
                            simbolo_filtro=simbolo_filtro_raw,
                            page=page,
-                           total_pages=total_pages)
+                           total_pages=total_pages,
+                           total_bought_value=total_bought_value, # Novo
+                           total_sold_value=total_sold_value,     # Novo
+                           total_transaction_costs=total_transaction_costs) # Novo
 
 
 @app.route('/add_transaction', methods=['GET', 'POST'])
@@ -1815,6 +1870,76 @@ def get_chart_data(simbolo):
         return jsonify({'labels': labels, 'data': data, 'simbolo': simbolo_yf, 'nome_popular': REVERSE_SYMBOL_MAPPING.get(simbolo_yf, simbolo_yf)})
     else:
         return jsonify({'error': 'Não foi possível obter dados históricos para este símbolo.', 'simbolo': simbolo_yf}), 404
+
+# --- NOVA ROTA API: Dados de Transações Agregadas para Gráfico ---
+@app.route('/api/monthly_transaction_summary/<int:user_id>')
+@login_required
+def get_monthly_transaction_summary(user_id):
+    # Parâmetros de filtro opcionais
+    data_inicio_str = request.args.get('data_inicio')
+    data_fim_str = request.args.get('data_fim')
+    simbolo_filtro_raw = request.args.get('simbolo_filtro', '').strip()
+
+    simbolo_filtro_mapeado = SYMBOL_MAPPING.get(simbolo_filtro_raw.upper(), simbolo_filtro_raw)
+
+    params = [user_id]
+    where_clauses = ["user_id = %s"]
+
+    if data_inicio_str:
+        where_clauses.append("data_transacao >= %s")
+        params.append(data_inicio_str)
+
+    if data_fim_str:
+        where_clauses.append("data_transacao <= %s")
+        params.append(data_fim_str)
+    
+    if simbolo_filtro_mapeado:
+        where_clauses.append("simbolo_ativo = %s")
+        params.append(simbolo_filtro_mapeado)
+
+    where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+    try:
+        with DBConnectionManager(dictionary=True) as cursor_db:
+            # Consulta para agrupar por mês/ano e somar valores de compra e venda
+            sql_query = f"""
+            SELECT
+                EXTRACT(YEAR FROM data_transacao) AS ano,
+                EXTRACT(MONTH FROM data_transacao) AS mes,
+                SUM(CASE WHEN tipo_operacao = 'COMPRA' THEN quantidade * preco_unitario ELSE 0 END) AS total_compras,
+                SUM(CASE WHEN tipo_operacao = 'VENDA' THEN quantidade * preco_unitario ELSE 0 END) AS total_vendas
+            FROM
+                transacoes
+            {where_sql}
+            GROUP BY
+                ano, mes
+            ORDER BY
+                ano ASC, mes ASC;
+            """
+            cursor_db.execute(sql_query, tuple(params))
+            results = cursor_db.fetchall()
+
+            labels = []
+            compras_data = []
+            vendas_data = []
+
+            for row in results:
+                # Formata o mês e ano para um label amigável, e converte para float
+                month_name = datetime.date(row['ano'], row['mes'], 1).strftime('%b/%Y') # Ex: Jan/2023
+                labels.append(month_name)
+                compras_data.append(float(row['total_compras']))
+                vendas_data.append(float(row['total_vendas']))
+            
+            return jsonify({
+                'labels': labels,
+                'compras': compras_data,
+                'vendas': vendas_data
+            })
+
+    except Exception as e:
+        print(f"ERRO ao obter resumo de transações mensais para gráfico: {e}")
+        return jsonify({'error': 'Não foi possível obter dados do gráfico de resumo de transações.'}), 500
+# --- FIM NOVA ROTA API ---
 
 
 @app.route('/predict_price/<simbolo>')
