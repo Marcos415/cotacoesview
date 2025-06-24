@@ -204,7 +204,8 @@
         <section class="bg-white p-6 rounded-xl shadow-md mb-8">
             <h2 class="text-2xl font-bold text-gray-800 mb-6">Minhas Posições</h2>
             {% if posicoes_carteira %}
-                <div class="max-h-[500px] overflow-y-auto pr-4"> {# Adicionado max-height e overflow-y-auto aqui #}
+                {# Ajuste aqui: altura máxima para ~6 linhas + cabeçalho da tabela #}
+                <div class="max-h-[320px] overflow-y-auto pr-4"> 
                     <div class="overflow-x-auto">
                         <table class="min-w-full bg-white rounded-lg overflow-hidden">
                             <thead class="bg-gray-200 text-gray-700">
