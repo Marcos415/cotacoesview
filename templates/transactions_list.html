@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lista de Transações - Minha Carteira</title>
+    <title>Resumo de Transações - Minha Carteira</title> {# Título ajustado #}
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -77,7 +77,7 @@
 
     <!-- Main Content -->
     <main class="flex-grow container mx-auto px-4 py-8">
-        <h1 class="text-3xl font-bold text-gray-800 mb-6">Histórico Completo de Transações</h1>
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">Resumo e Gráfico de Transações</h1> {# Título ajustado #}
 
         <!-- Flash Messages -->
         <div id="flash-messages" class="mb-6">
@@ -94,7 +94,7 @@
 
         <!-- Seção de Resumo das Transações -->
         <section class="summary-card mb-8">
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">Resumo das Transações (Filtro Atual)</h2>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Resumo das Transações (Geral)</h2> {# Título ajustado #}
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
                 <div class="p-4 bg-blue-50 rounded-lg">
                     <p class="text-lg font-medium text-gray-700">Total Comprado</p>
@@ -125,142 +125,7 @@
             </div>
         </section>
 
-        <!-- Formulário de Filtro (Mantido) -->
-        <section class="bg-white p-6 rounded-xl shadow-md mb-8">
-            <h2 class="text-2xl font-bold text-gray-800 mb-6">Filtros de Transações</h2>
-            <form action="{{ url_for('transactions_list') }}" method="GET" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 items-end">
-                <div>
-                    <label for="data_inicio" class="block text-sm font-medium text-gray-700 mb-1">Data Início:</label>
-                    <input type="date" id="data_inicio" name="data_inicio" value="{{ data_inicio }}" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
-                </div>
-                <div>
-                    <label for="data_fim" class="block text-sm font-medium text-gray-700 mb-1">Data Fim:</label>
-                    <input type="date" id="data_fim" name="data_fim" value="{{ data_fim }}" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
-                </div>
-                <div>
-                    <label for="simbolo_filtro" class="block text-sm font-medium text-gray-700 mb-1">Símbolo Ativo:</label>
-                    <input type="text" id="simbolo_filtro" name="simbolo_filtro" value="{{ simbolo_filtro }}" placeholder="Ex: PETR4.SA ou PETROBRAS" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
-                </div>
-                <div>
-                    <label for="ordenar_por" class="block text-sm font-medium text-gray-700 mb-1">Ordenar Por:</label>
-                    <select id="ordenar_por" name="ordenar_por" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
-                        <option value="data_transacao" {% if ordenar_por == 'data_transacao' %}selected{% endif %}>Data</option>
-                        <option value="simbolo_ativo" {% if ordenar_por == 'simbolo_ativo' %}selected{% endif %}>Símbolo Ativo</option>
-                        <option value="preco_unitario" {% if ordenar_por == 'preco_unitario' %}selected{% endif %}>Preço Unitário</option>
-                        <option value="quantidade" {% if ordenar_por == 'quantidade' %}selected{% endif %}>Quantidade</option>
-                        <option value="tipo_operacao" {% if ordenar_por == 'tipo_operacao' %}selected{% endif %}>Tipo Operação</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="ordem" class="block text-sm font-medium text-gray-700 mb-1">Ordem:</label>
-                    <select id="ordem" name="ordem" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
-                        <option value="DESC" {% if ordem == 'DESC' %}selected{% endif %}>Descendente</option>
-                        <option value="ASC" {% if ordem == 'ASC' %}selected{% endif %}>Ascendente</option>
-                    </select>
-                </div>
-                <div class="col-span-1 md:col-span-1 flex space-x-2">
-                    <button type="submit" class="flex-grow bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md shadow-sm font-medium action-button">
-                        <i class="fas fa-filter mr-2"></i>Filtrar
-                    </button>
-                    <a href="{{ url_for('transactions_list') }}" class="flex-grow bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-md shadow-sm font-medium text-center">
-                        <i class="fas fa-times-circle mr-2"></i>Limpar
-                    </a>
-                </div>
-            </form>
-        </section>
-
-        <!-- Tabela de Transações (Mantida) -->
-        <section class="bg-white p-6 rounded-xl shadow-md mb-8">
-            <h2 class="text-2xl font-bold text-gray-800 mb-6">Detalhes das Transações</h2>
-            {% if transacoes %}
-                <div class="overflow-x-auto">
-                    <table class="min-w-full bg-white rounded-lg overflow-hidden">
-                        <thead class="bg-gray-200 text-gray-700">
-                            <tr>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Data</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Hora</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Ativo</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Qtd.</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Preço Unit.</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Tipo</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Custos/Taxas</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Observações</th>
-                                <th class="py-3 px-4 text-left text-sm font-semibold">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-200">
-                            {% for transacao in transacoes %}
-                            <tr>
-                                <td class="py-3 px-4 text-gray-700">{{ transacao.data_transacao | datetimeformat('%d/%m/%Y') }}</td>
-                                <td class="py-3 px-4 text-gray-700">
-                                    {% if transacao.hora_transacao %}
-                                        {{ transacao.hora_transacao | datetimeformat('%H:%M') }}
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
-                                </td>
-                                <td class="py-3 px-4 text-gray-700 font-medium">
-                                    {{ REVERSE_SYMBOL_MAPPING.get(transacao.simbolo_ativo, transacao.simbolo_ativo.replace('.SA', '').upper()) }}
-                                    <span class="text-xs text-gray-500">({{ transacao.simbolo_ativo }})</span>
-                                </td>
-                                <td class="py-3 px-4 text-gray-700">{{ transacao.quantidade | floatformat(4) }}</td>
-                                <td class="py-3 px-4 text-gray-700">R$ {{ transacao.preco_unitario | floatformat(2) }}</td>
-                                <td class="py-3 px-4">
-                                    <span class="px-2 py-1 rounded-full text-xs font-semibold
-                                        {% if transacao.tipo_operacao == 'COMPRA' %}bg-green-100 text-green-800
-                                        {% elif transacao.tipo_operacao == 'VENDA' %}bg-red-100 text-red-800
-                                        {% endif %}">
-                                        {{ transacao.tipo_operacao }}
-                                    </span>
-                                </td>
-                                <td class="py-3 px-4 text-gray-700">R$ {{ transacao.custos_taxas | floatformat(2) }}</td>
-                                <td class="py-3 px-4 text-gray-700 text-sm max-w-xs overflow-hidden text-ellipsis whitespace-nowrap" title="{{ transacao.observacoes }}">
-                                    {% if transacao.observacoes %}{{ transacao.observacoes }}{% else %}N/A{% endif %}
-                                </td>
-                                <td class="py-3 px-4 flex space-x-2">
-                                    <a href="{{ url_for('edit_transaction', transaction_id=transacao.id) }}" class="text-blue-500 hover:text-blue-700 text-sm font-medium" title="Editar Transação">
-                                        <i class="fas fa-edit"></i>
-                                    </a>
-                                    <form action="{{ url_for('delete_transaction', transaction_id=transacao.id) }}" method="POST" onsubmit="return confirm('Tem certeza que deseja excluir esta transação?');">
-                                        <button type="submit" class="text-red-500 hover:text-red-700 text-sm font-medium" title="Excluir Transação">
-                                            <i class="fas fa-trash-alt"></i>
-                                        </button>
-                                    </form>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Paginação -->
-                <nav class="flex justify-center items-center space-x-2 mt-6">
-                    {% if page > 1 %}
-                        <a href="{{ url_for('transactions_list', page=1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">Primeira</a>
-                        <a href="{{ url_for('transactions_list', page=page-1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">&laquo; Anterior</a>
-                    {% endif %}
-
-                    {% for p in range(1, total_pages + 1) %}
-                        {% if p == page %}
-                            <span class="px-3 py-1 rounded-md bg-blue-600 text-white font-bold">{{ p }}</span>
-                        {% elif p > page - 3 and p < page + 3 %}
-                            <a href="{{ url_for('transactions_list', page=p, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">{{ p }}</a>
-                        {% elif loop.index == 1 or loop.index == total_pages %}
-                            <a href="{{ url_for('transactions_list', page=p, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">{{ p }}</a>
-                        {% elif loop.index == page - 3 or loop.index == page + 3 %}
-                            <span class="px-3 py-1">...</span>
-                        {% endif %}
-                    {% endfor %}
-
-                    {% if page < total_pages %}
-                        <a href="{{ url_for('transactions_list', page=page+1, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">Próxima &raquo;</a>
-                        <a href="{{ url_for('transactions_list', page=total_pages, data_inicio=data_inicio, data_fim=data_fim, ordenar_por=ordenar_por, ordem=ordem, simbolo_filtro=simbolo_filtro) }}" class="px-3 py-1 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300">Última</a>
-                    {% endif %}
-                </nav>
-            {% else %}
-                <p class="text-gray-600">Nenhuma transação encontrada com os filtros aplicados.</p>
-            {% endif %}
-        </section>
+        {# REMOVIDAS SEÇÕES DE FILTRO E TABELA DE TRANSAÇÕES, POIS JÁ ESTÃO NA INDEX.HTML #}
 
     </main>
 
@@ -279,10 +144,7 @@
         async function loadMonthlyTransactionChart() {
             const chartLoading = document.getElementById('chartLoading');
             const chartError = document.getElementById('chartError');
-            const dataInicio = document.getElementById('data_inicio').value;
-            const dataFim = document.getElementById('data_fim').value;
-            const simboloFiltro = document.getElementById('simbolo_filtro').value;
-
+            
             // Limpa qualquer gráfico anterior
             if (monthlyChartInstance) {
                 monthlyChartInstance.destroy();
@@ -292,7 +154,12 @@
             chartError.classList.add('hidden');
 
             try {
-                // Constrói a URL da API com base nos filtros atuais
+                // Pega os parâmetros de filtro da URL atual
+                const urlParams = new URLSearchParams(window.location.search);
+                const dataInicio = urlParams.get('data_inicio') || '';
+                const dataFim = urlParams.get('data_fim') || '';
+                const simboloFiltro = urlParams.get('simbolo_filtro') || '';
+
                 let apiUrl = `/api/monthly_transaction_summary/${userId}`;
                 const queryParams = new URLSearchParams();
                 if (dataInicio) queryParams.append('data_inicio', dataInicio);
@@ -303,11 +170,14 @@
                     apiUrl += '?' + queryParams.toString();
                 }
                 
+                console.log("DEBUG: URL da API para o gráfico:", apiUrl); // Log para depuração
                 const response = await fetch(apiUrl);
+                
                 if (!response.ok) {
                     throw new Error(`Erro HTTP! status: ${response.status}`);
                 }
                 const data = await response.json();
+                console.log("DEBUG: Dados recebidos da API para o gráfico:", data); // Log para depuração
 
                 if (data.labels && data.compras && data.vendas) {
                     const ctx = document.getElementById('monthlyTransactionChart').getContext('2d');
@@ -317,14 +187,14 @@
                             labels: data.labels,
                             datasets: [
                                 {
-                                    label: 'Total Compras',
+                                    label: 'Total Compras (R$)',
                                     data: data.compras,
                                     backgroundColor: 'rgba(75, 192, 192, 0.6)',
                                     borderColor: 'rgba(75, 192, 192, 1)',
                                     borderWidth: 1
                                 },
                                 {
-                                    label: 'Total Vendas',
+                                    label: 'Total Vendas (R$)',
                                     data: data.vendas,
                                     backgroundColor: 'rgba(255, 99, 132, 0.6)',
                                     borderColor: 'rgba(255, 99, 132, 1)',
@@ -367,7 +237,7 @@
                     });
                 } else {
                     chartError.classList.remove('hidden');
-                    console.error("Dados do gráfico de transações inválidos:", data);
+                    console.error("Dados do gráfico de transações inválidos ou incompletos:", data);
                 }
             } catch (error) {
                 console.error("Erro ao buscar dados do gráfico de transações:", error);
@@ -380,7 +250,7 @@
         // --- FUNCIONALIDADE PARA MANTER POSIÇÃO DE ROLAGEM ---
         // Salva a posição de rolagem antes de descarregar a página
         window.addEventListener('beforeunload', () => {
-            sessionStorage.setItem('scrollPosList', window.scrollY); // Use uma chave diferente para esta página
+            sessionStorage.setItem('scrollPosList', window.scrollY);
         });
 
         // Restaura a posição de rolagem quando a página carrega
@@ -392,24 +262,6 @@
             }
             // Carrega o gráfico após a página carregar e a rolagem ser restaurada
             loadMonthlyTransactionChart();
-
-            // Adiciona listeners para os botões de filtro para recarregar o gráfico ao filtrar
-            document.querySelector('form').addEventListener('submit', (event) => {
-                // Apenas impede a submissão padrão se for para recarregar o gráfico via JS
-                // Para este caso, como o filtro recarrega a página, não precisa de preventDefault
-                // Mas garante que o gráfico será recarregado ao submeter o formulário
-                loadMonthlyTransactionChart();
-            });
-            // Adiciona listener para o botão de limpar para recarregar o gráfico
-            document.querySelector('a[href="{{ url_for('transactions_list') }}"]').addEventListener('click', () => {
-                // Reseta os campos de filtro antes de recarregar o gráfico
-                document.getElementById('data_inicio').value = '';
-                document.getElementById('data_fim').value = '';
-                document.getElementById('simbolo_filtro').value = '';
-                document.getElementById('ordenar_por').value = 'data_transacao';
-                document.getElementById('ordem').value = 'DESC';
-                loadMonthlyTransactionChart();
-            });
         });
         // --- FIM DA FUNCIONALIDADE DE ROLAGEM E GRÁFICO ---
 
