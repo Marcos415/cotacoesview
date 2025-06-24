@@ -564,6 +564,7 @@ def get_historical_prices_yfinance_cached(simbolo, period, interval):
     cache_key = (final_simbolo_to_fetch, period, interval)
 
     if is_cache_fresh(market_data_cache, cache_key, MARKET_DATA_CACHE_TTL):
+        print(f"DEBUG: Dados históricos para {final_simbolo_to_fetch} obtidos do cache.")
         return market_data_cache[cache_key]['data'].copy()
 
     try:
@@ -571,7 +572,9 @@ def get_historical_prices_yfinance_cached(simbolo, period, interval):
         df_hist = ticker.history(period=period, interval=interval)
         if not df_hist.empty:
             market_data_cache[cache_key] = {'data': df_hist, 'timestamp': datetime.datetime.now()}
+            print(f"DEBUG: Dados históricos para {final_simbolo_to_fetch} buscados e cacheados.")
             return df_hist.copy()
+        print(f"DEBUG: Nenhum dado histórico encontrado para {final_simbolo_to_fetch}.")
         return pd.DataFrame()
     except Exception as e:
         print(f"Erro ao buscar dados históricos para {final_simbolo_to_fetch}: {e}")
@@ -1399,7 +1402,7 @@ def edit_transaction(transaction_id):
             try:
                 hora_transacao = datetime.datetime.strptime(hora_transacao_str, '%H:%M').time()
             except ValueError:
-                flash('Formato de hora inválido. Use HH:MM.', 'danger')
+                flash(f'Formato de hora inválido. Use HH:MM. Erro: {e}', 'danger')
                 transaction['data_transacao_formatted'] = data_transacao_str
                 transaction['hora_transacao_formatted'] = hora_transacao_str
                 if request.form.get('simbolo_ativo_manual_edit'):
@@ -1781,14 +1784,38 @@ def excluir_alerta():
         print(f"Erro ao excluir alerta de preço: {e}")
     return redirect(url_for('index'))
 
-# Rota para obter o histórico de gráficos (ainda presente no app.py, mas não no HTML)
-# Se você quiser remover completamente a funcionalidade do gráfico, esta rota e a função get_historical_chart_data também poderiam ser removidas do app.py.
-@app.route('/get_historical_chart_data/<simbolo>')
+# Rota para obter dados de gráfico histórico
+@app.route('/get_chart_data/<simbolo>')
 @login_required
-def get_historical_chart_data(simbolo):
-    # Esta rota agora retornará um erro 404, pois os gráficos foram removidos do HTML.
-    # O ideal seria removê-la completamente se a funcionalidade de gráfico não for mais usada.
-    return jsonify({'error': 'Funcionalidade de gráfico removida.'}), 404
+def get_chart_data(simbolo):
+    # Assegura que o símbolo está no formato YFinance
+    simbolo_yf = SYMBOL_MAPPING.get(simbolo.upper(), simbolo)
+    if simbolo_yf == simbolo and \
+       not any(c in simbolo for c in ['^', '-', '=']) and \
+       not any(simbolo.upper().endswith(suf) for suf in ['.SA', '.BA', '.TO', '.L', '.PA', '.AX', '.V', '.F']):
+        if 4 <= len(simbolo) <= 6 and simbolo.isalnum():
+            simbolo_yf = f"{simbolo.upper()}.SA"
+    simbolo_yf = simbolo_yf.upper()
+
+    print(f"DEBUG: Rota /get_chart_data/{simbolo} - Buscando dados para: {simbolo_yf}")
+
+    # Pega os dados históricos dos últimos 365 dias (1 ano) em intervalo diário
+    df_hist = get_historical_prices_yfinance_cached(simbolo_yf, period="1y", interval="1d")
+
+    if not df_hist.empty:
+        # Extrai as datas e os preços de fechamento
+        # Converte o índice de data para string no formato YYYY-MM-DD
+        labels = [d.strftime('%Y-%m-%d') for d in df_hist.index.to_pydatetime()]
+        data = df_hist['Close'].tolist() # Ou 'Adj Close' se preferir preços ajustados
+        
+        # Converte para float para garantir serialização JSON
+        data = [float(val) for val in data] 
+
+        # Retorna os dados em formato JSON
+        return jsonify({'labels': labels, 'data': data, 'simbolo': simbolo_yf, 'nome_popular': REVERSE_SYMBOL_MAPPING.get(simbolo_yf, simbolo_yf)})
+    else:
+        return jsonify({'error': 'Não foi possível obter dados históricos para este símbolo.', 'simbolo': simbolo_yf}), 404
+
 
 @app.route('/predict_price/<simbolo>')
 @login_required
