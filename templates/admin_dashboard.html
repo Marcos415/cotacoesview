@@ -1,170 +1,177 @@
-{% extends 'base.html' %}
-
-{% block title %}Painel de Administração{% endblock %}
-
-{% block content %}
-<div class="container mx-auto px-4 py-8">
-    <h1 class="text-4xl font-bold text-gray-900 mb-8 text-center">Painel de Administração</h1>
-
-    <!-- Mensagens Flash -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="mb-6 space-y-3">
-                {% for category, message in messages %}
-                    <div class="p-4 rounded-lg text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% elif category == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-blue-100 text-blue-800{% endif %} shadow-md">
-                        {{ message }}
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
-
-    <div class="mb-8 flex flex-wrap justify-center gap-4">
-        <a href="{{ url_for('admin_audit_logs') }}" class="bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-full shadow-md hover:shadow-lg transition duration-300">
-            Logs de Auditoria
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Admin - Minha Carteira</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+        }
+        .action-button {
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        .action-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
+        }
+        .table-header {
+            background-color: #e9ecef;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col">
+    <!-- Navbar -->
+    <nav class="bg-white shadow-md p-4 flex justify-between items-center">
+        <a href="{{ url_for('index') }}" class="text-2xl font-bold text-gray-800">
+            Minha Carteira
         </a>
-    </div>
-
-    <h2 class="text-2xl font-bold text-gray-800 mb-6">Gestão de Utilizadores (Total de Admins: {{ admin_count }})</h2>
-
-    {% if users %}
-        <div class="overflow-x-auto bg-white rounded-lg shadow-md">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            ID
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Nome de Utilizador
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Nome Completo
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Email
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Nº de Contacto
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            É Admin?
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Criado Em
-                        </th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Ações
-                        </th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {% for user in users %}
-                    <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ user.id }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ user.username }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ user.full_name }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ user.email }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ user.contact_number if user.contact_number else 'N/A' }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm {% if user.is_admin %}text-green-600 font-semibold{% else %}text-gray-500{% endif %}">
-                            {{ 'Sim' if user.is_admin else 'Não' }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {{ user.created_at | datetimeformat('%Y-%m-%d %H:%M') }}
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-left text-sm font-medium flex space-x-2">
-                            {% if user.id != session['user_id'] %}
-                                <form action="{{ url_for('toggle_admin', user_id=user.id) }}" method="POST" class="inline">
-                                    <button type="submit" class="
-                                        {% if user.is_admin %}
-                                            bg-yellow-500 hover:bg-yellow-600
-                                        {% else %}
-                                            bg-green-500 hover:bg-green-600
-                                        {% endif %}
-                                        text-white py-1 px-3 rounded-md text-xs transition-colors">
-                                        {{ 'Remover Admin' if user.is_admin else 'Tornar Admin' }}
-                                    </button>
-                                </form>
-                                <form action="{{ url_for('delete_user', user_id=user.id) }}" method="POST" class="inline" onsubmit="return confirm('Tem certeza que deseja excluir o usuário {{ user.username }} e TODAS as suas transações? Esta ação é irreversível.');">
-                                    <button type="submit" class="bg-red-500 hover:bg-red-600 text-white py-1 px-3 rounded-md text-xs transition-colors">
-                                        Excluir
-                                    </button>
-                                </form>
-                                <!-- Botão de Redefinir Senha -->
-                                <button type="button" 
-                                        onclick="openResetPasswordModal({{ user.id }}, '{{ user.username }}')"
-                                        class="bg-purple-500 hover:bg-purple-600 text-white py-1 px-3 rounded-md text-xs transition-colors">
-                                    Redefinir Senha
-                                </button>
-                            {% else %}
-                                <span class="text-gray-400 text-xs">Sua conta</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    {% else %}
-        <p class="text-center text-gray-600 py-4">Nenhum outro usuário encontrado no sistema.</p>
-    {% endif %}
-</div>
-
-<!-- Modal para Redefinir Senha -->
-<div id="resetPasswordModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50 hidden">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
-        <h3 class="text-xl font-bold text-gray-800 mb-4">Redefinir Senha para <span id="resetUserUsername" class="text-blue-600"></span></h3>
-        <button id="closeResetPasswordModal" class="absolute top-3 right-5 text-gray-500 hover:text-gray-800 text-2xl font-bold">&times;</button>
-        
-        <form id="resetPasswordForm" method="POST" class="space-y-4">
-            <input type="hidden" id="resetUserId" name="user_id">
-            <div>
-                <label for="new_password" class="block text-sm font-medium text-gray-700">Nova Senha</label>
-                <input type="password" id="new_password" name="new_password" required minlength="6"
-                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+        <div class="flex items-center space-x-4">
+            {% if session.get('user_id') %}
+            <span class="text-gray-700">Olá, <span class="font-semibold">{{ session.get('username') }}</span>!</span>
+            <div class="relative group">
+                <button class="text-gray-700 hover:text-blue-600 focus:outline-none flex items-center space-x-1">
+                    <i class="fas fa-user-circle text-xl"></i>
+                    <span>Conta</span>
+                    <i class="fas fa-chevron-down text-xs ml-1"></i>
+                </button>
+                <div class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-20 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 ease-in-out transform scale-95 group-hover:scale-100">
+                    <a href="{{ url_for('profile') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                        <i class="fas fa-cog mr-2"></i>Configurações do Perfil
+                    </a>
+                    {% if session.get('is_admin') %}
+                    <a href="{{ url_for('admin_dashboard') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                        <i class="fas fa-users-cog mr-2"></i>Painel de Admin
+                    </a>
+                    <a href="{{ url_for('admin_audit_logs') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                        <i class="fas fa-clipboard-list mr-2"></i>Logs de Auditoria
+                    </a>
+                    {% endif %}
+                    <a href="{{ url_for('logout') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t border-gray-200 mt-1 pt-2">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Sair
+                    </a>
+                </div>
             </div>
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-sm transition-colors">
-                Redefinir Senha
-            </button>
-        </form>
-    </div>
-</div>
+            {% else %}
+            <a href="{{ url_for('login') }}" class="text-gray-700 hover:text-blue-600">Login</a>
+            <a href="{{ url_for('register') }}" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors">Registar</a>
+            {% endif %}
+        </div>
+    </nav>
 
-{% endblock %}
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">Painel de Administração</h1>
 
-{% block scripts_extra %}
-<script>
-    const resetPasswordModal = document.getElementById('resetPasswordModal');
-    const closeResetPasswordModalBtn = document.getElementById('closeResetPasswordModal');
-    const resetUserIdInput = document.getElementById('resetUserId');
-    const resetUserUsernameSpan = document.getElementById('resetUserUsername');
-    const resetPasswordForm = document.getElementById('resetPasswordForm');
+        <!-- Flash Messages -->
+        <div id="flash-messages" class="mb-6">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="p-3 mb-3 rounded-lg text-sm {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'danger' %}bg-red-100 text-red-800{% else %}bg-blue-100 text-blue-800{% endif %}" role="alert">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
 
-    function openResetPasswordModal(userId, username) {
-        resetUserIdInput.value = userId;
-        resetUserUsernameSpan.textContent = username;
-        resetPasswordForm.action = "{{ url_for('reset_password', user_id=12345) }}".replace('12345', userId);
-        resetPasswordModal.classList.remove('hidden');
-    }
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Gestão de Utilizadores</h2>
+            <p class="text-gray-600 mb-4">Total de Administradores: <span class="font-bold text-blue-600">{{ admin_count }}</span></p>
 
-    closeResetPasswordModalBtn.addEventListener('click', function() {
-        resetPasswordModal.classList.add('hidden');
-    });
+            {% if users %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg overflow-hidden">
+                        <thead class="bg-gray-200 text-gray-700">
+                            <tr>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">ID</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Nome de Utilizador</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Nome Completo</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Email</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Número de Contato</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">É Admin</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Criado Em</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            {% for user in users %}
+                            <tr>
+                                <td class="py-3 px-4 text-gray-700">{{ user.id }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ user.username }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ user.full_name }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ user.email }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ user.contact_number if user.contact_number else 'N/A' }}</td>
+                                <td class="py-3 px-4 text-gray-700">
+                                    <span class="px-2 py-1 rounded-full text-xs font-semibold
+                                        {% if user.is_admin %}bg-green-100 text-green-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+                                        {{ 'Sim' if user.is_admin else 'Não' }}
+                                    </span>
+                                </td>
+                                <td class="py-3 px-4 text-gray-700">{{ user.created_at | datetimeformat('%d/%m/%Y %H:%M') }}</td>
+                                <td class="py-3 px-4">
+                                    <div class="flex flex-col space-y-2">
+                                        {# Toggle Admin Status #}
+                                        <form action="{{ url_for('toggle_admin', user_id=user.id) }}" method="POST" class="inline-block">
+                                            <button type="submit" class="w-full text-center px-3 py-1 rounded-md text-sm font-medium
+                                                {% if user.is_admin %}bg-red-500 hover:bg-red-600 text-white{% else %}bg-green-500 hover:bg-green-600 text-white{% endif %}"
+                                                onclick="return confirm('Tem certeza que deseja {{ 'remover as permissões de admin de' if user.is_admin else 'promover a admin' }} {{ user.username }}?');">
+                                                <i class="fas fa-user-shield mr-1"></i> {{ 'Remover Admin' if user.is_admin else 'Tornar Admin' }}
+                                            </button>
+                                        </form>
 
-    // Fechar modal ao clicar fora
-    resetPasswordModal.addEventListener('click', function(event) {
-        if (event.target === resetPasswordModal) {
-            resetPasswordModal.classList.add('hidden');
-        }
-    });
+                                        {# Reset Password Form #}
+                                        <form action="{{ url_for('reset_password', user_id=user.id) }}" method="POST" class="inline-flex items-center space-x-2">
+                                            <input type="password" name="new_password" placeholder="Nova Senha" required
+                                                   minlength="6" class="p-1 border rounded-md text-sm w-32 focus:ring-blue-500 focus:border-blue-500">
+                                            <button type="submit" class="flex-shrink-0 bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded-md text-sm font-medium"
+                                                    onclick="return confirm('Tem certeza que deseja redefinir a senha de {{ user.username }}?');">
+                                                <i class="fas fa-key mr-1"></i> Redefinir
+                                            </button>
+                                        </form>
 
-    // Adicione validação básica ao formulário de redefinição de senha antes de enviar
-    resetPasswordForm.addEventListener('submit', function(event) {
-        const newPassword = document.getElementById('new_password').value;
-        if (newPassword.length < 6) {
-            alert('A nova senha deve ter pelo menos 6 caracteres.');
-            event.preventDefault(); // Impede o envio do formulário
-        }
-    });
-</script>
-{% endblock %}
+                                        {# Delete User #}
+                                        <form action="{{ url_for('delete_user', user_id=user.id) }}" method="POST" class="inline-block">
+                                            <button type="submit" class="w-full text-center bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded-md text-sm font-medium"
+                                                onclick="return confirm('Tem certeza que deseja excluir o utilizador {{ user.username }}? Esta ação é irreversível.');">
+                                                <i class="fas fa-trash-alt mr-1"></i> Excluir
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-gray-600">Nenhum utilizador registado além do seu próprio.</p>
+            {% endif %}
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white p-6 text-center mt-8">
+        <p>&copy; {{ now() | datetimeformat('%Y') }} Minha Carteira de Investimentos. Todos os direitos reservados.</p>
+        <p class="text-sm mt-2">Desenvolvido com Python.</p>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const flashMessages = document.getElementById('flash-messages');
+            if (flashMessages && flashMessages.children.length > 0) {
+                setTimeout(() => {
+                    flashMessages.innerHTML = '';
+                }, 7000);
+            }
+        });
+    </script>
+</body>
+</html>
