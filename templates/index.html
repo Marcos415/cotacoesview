@@ -199,6 +199,7 @@
                     <a href="{{ url_for('add_transaction') }}" class="flex items-center justify-center bg-white text-blue-600 px-6 py-3 rounded-full font-semibold hover:bg-gray-100 action-button">
                         <i class="fas fa-plus-circle mr-2"></i> Adicionar Transação
                     </a>
+                    {# Botão "Ver Transações" que leva para a página de resumo e gráfico, agora mais útil #}
                     <a href="{{ url_for('transactions_list') }}" class="flex items-center justify-center bg-white text-blue-600 px-6 py-3 rounded-full font-semibold hover:bg-gray-100 action-button">
                         <i class="fas fa-list-alt mr-2"></i> Ver Transações
                     </a>
@@ -401,6 +402,7 @@
                                 <th class="py-3 px-4 text-left text-sm font-semibold">Ativo</th>
                                 <th class="py-3 px-4 text-left text-sm font-semibold">Qtd.</th>
                                 <th class="py-3 px-4 text-left text-sm font-semibold">Preço Unit.</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold">Total</th> {# NOVA COLUNA #}
                                 <th class="py-3 px-4 text-left text-sm font-semibold">Tipo</th>
                                 <th class="py-3 px-4 text-left text-sm font-semibold">Custos/Taxas</th>
                                 <th class="py-3 px-4 text-left text-sm font-semibold">Observações</th>
@@ -424,6 +426,7 @@
                                 </td>
                                 <td class="py-3 px-4 text-gray-700">{{ transacao.quantidade | floatformat(4) }}</td>
                                 <td class="py-3 px-4 text-gray-700">R$ {{ transacao.preco_unitario | floatformat(2) }}</td>
+                                <td class="py-3 px-4 text-gray-700">R$ {{ (transacao.quantidade * transacao.preco_unitario) | floatformat(2) }}</td> {# NOVO CÁLCULO #}
                                 <td class="py-3 px-4">
                                     <span class="px-2 py-1 rounded-full text-xs font-semibold
                                         {% if transacao.tipo_operacao == 'COMPRA' %}bg-green-100 text-green-800
@@ -570,7 +573,7 @@
     <!-- Footer -->
     <footer class="bg-gray-800 text-white p-6 text-center mt-8">
         <p>&copy; {{ now() | datetimeformat('%Y') }} Minha Carteira de Investimentos. Todos os direitos reservados.</p>
-        <p class="text-sm mt-2">Desenvolvido por Marcos com Python.</p> {# Linha alterada: removido o ícone de coração #}
+        <p class="text-sm mt-2">Desenvolvido com Python.</p> {# Linha alterada: removido o ícone de coração #}
     </footer>
 
     <script>
@@ -748,11 +751,9 @@
         document.addEventListener('DOMContentLoaded', function() {
             const flashMessages = document.getElementById('flash-messages');
             if (flashMessages && flashMessages.children.length > 0) {
-                // Se houver mensagens, elas já estão visíveis pelo Flask.
-                // Você pode adicionar um timer para escondê-las automaticamente, se desejar.
                 setTimeout(() => {
-                    flashMessages.innerHTML = ''; // Remove as mensagens
-                }, 7000); // Esconde após 7 segundos
+                    flashMessages.innerHTML = '';
+                }, 7000);
             }
         });
 
@@ -767,7 +768,7 @@
             const savedScrollPos = sessionStorage.getItem('scrollPos');
             if (savedScrollPos) {
                 window.scrollTo(0, parseInt(savedScrollPos));
-                sessionStorage.removeItem('scrollPos'); // Remove para não restaurar em futuras visitas (a menos que a página seja recarregada novamente)
+                sessionStorage.removeItem('scrollPos');
             }
         });
         // --- FIM DA FUNCIONALIDADE DE ROLAGEM ---
